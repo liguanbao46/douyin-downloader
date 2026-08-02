@@ -2,7 +2,6 @@
 
 > 🪶 一款基于 Python + PyQt6 的抖音主页作品批量下载工具，支持视频、图集、实况图下载及 Excel 导出。  
 > 本项目完全开源，仅用于学习与研究，禁止任何商业或违法用途。
-> ![赞赏码](https://raw.githubusercontent.com/yanruying/YanRuYing/refs/heads/main/pay.png)
 >
 > 本项目**a_bogus算法**来源于开源项目 [Douyin_TikTok_Download_API](https://github.com/Evil0ctal/Douyin_TikTok_Download_API)
 ---
