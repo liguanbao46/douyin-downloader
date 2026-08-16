@@ -22,6 +22,7 @@ from douyin_downloader.constants import (
 from douyin_downloader.utils.config import save_config
 from douyin_downloader.utils.file_utils import sanitize_filename, safe_mkdir
 from douyin_downloader.core.api import extract_sec_user_id_from_url
+from douyin_downloader.core.parser import parse_awemes_to_works
 
 from douyin_downloader.gui.worker import Worker
 from douyin_downloader.gui import cfg
@@ -87,6 +88,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.export_urls_btn = QtWidgets.QPushButton('导出直链')
         self.export_excel_btn = QtWidgets.QPushButton('导出Excel')
         self.download_btn = QtWidgets.QPushButton('开始下载')
+        self.open_folder_btn = QtWidgets.QPushButton('打开文件夹')
 
         btns.addWidget(self.settings_btn)
         btns.addWidget(self.export_urls_btn)
@@ -101,10 +103,21 @@ class MainWindow(QtWidgets.QMainWindow):
             self.export_excel_btn.setToolTip("请先安装 'openpyxl' (pip install openpyxl) 以启用此功能")
         
         btns.addWidget(self.download_btn)
+        btns.addWidget(self.open_folder_btn)
+
+        # 搜索框
+        search_layout = QtWidgets.QHBoxLayout()
+        lay.addLayout(search_layout)
+        self.search_edit = QtWidgets.QLineEdit()
+        self.search_edit.setPlaceholderText('搜索作品标题或作者...')
+        self.search_edit.setClearButtonEnabled(True)
+        self.search_edit.setMaximumWidth(300)
+        search_layout.addWidget(self.search_edit)
+        search_layout.addStretch()
 
         self.tree = QtWidgets.QTreeWidget()
         self.tree.setStyle(NoFocusRectStyle())
-        self.tree.setHeaderLabels(['选择', '序号', '发布日期', '描述', '合集', '类型 ↓'])
+        self.tree.setHeaderLabels(['选择', '序号', '作者', '提取方式', '作品类型', '作品标题', '时长/数量', '分辨率', '下载状态', '发布时间'])
 
         self.type_filter_menu = QtWidgets.QMenu(self)
         self.type_filter_menu.setWindowFlags(Qt.WindowType.Popup | Qt.WindowType.FramelessWindowHint | Qt.WindowType.NoDropShadowWindowHint)
@@ -138,7 +151,7 @@ class MainWindow(QtWidgets.QMainWindow):
         filter_layout.setSpacing(2)
 
         self.video_checkbox = QtWidgets.QCheckBox('视频')
-        self.image_checkbox = QtWidgets.QCheckBox('图片')
+        self.image_checkbox = QtWidgets.QCheckBox('图集')
         self.live_checkbox = QtWidgets.QCheckBox('实况')
 
         self.video_checkbox.setChecked(True)
@@ -159,25 +172,27 @@ class MainWindow(QtWidgets.QMainWindow):
 
         fm = self.tree.fontMetrics()
         width0 = fm.horizontalAdvance('选择') + 16
-        col4_w = fm.horizontalAdvance('汉' * 4) + 12
-        col5_w = fm.horizontalAdvance('汉' * 4) + 12
         self.tree.setColumnWidth(0, width0)
-        self.tree.setColumnWidth(1, 60)
-        self.tree.setColumnWidth(2, 100)
-        self.tree.setColumnWidth(3, 360)
-        self.tree.setColumnWidth(4, int(col4_w))
-        self.tree.setColumnWidth(5, int(col5_w))
+        self.tree.setColumnWidth(1, 50)   # 序号
+        self.tree.setColumnWidth(2, 80)   # 作者
+        self.tree.setColumnWidth(3, 70)   # 提取方式
+        self.tree.setColumnWidth(4, 80)   # 作品类型
+        self.tree.setColumnWidth(5, 300)  # 作品标题 (stretch)
+        self.tree.setColumnWidth(6, 80)   # 时长/数量
+        self.tree.setColumnWidth(7, 90)   # 分辨率
+        self.tree.setColumnWidth(8, 70)   # 下载状态
+        self.tree.setColumnWidth(9, 100)  # 发布时间
 
         header = self.tree.header()
         hdr_h = fm.height() + 10
         if header:
             header.setFixedHeight(int(hdr_h))
             header.setSectionResizeMode(0, QtWidgets.QHeaderView.ResizeMode.Fixed)
-            header.setSectionResizeMode(1, QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
-            header.setSectionResizeMode(2, QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
-            header.setSectionResizeMode(3, QtWidgets.QHeaderView.ResizeMode.Stretch)
-            header.setSectionResizeMode(4, QtWidgets.QHeaderView.ResizeMode.Fixed)
-            header.setSectionResizeMode(5, QtWidgets.QHeaderView.ResizeMode.Fixed)
+            for col in range(1, 10):
+                if col == 5:
+                    header.setSectionResizeMode(col, QtWidgets.QHeaderView.ResizeMode.Stretch)
+                else:
+                    header.setSectionResizeMode(col, QtWidgets.QHeaderView.ResizeMode.Fixed)
             header.setSectionsMovable(False)
             header.setStretchLastSection(False)
 
@@ -217,6 +232,10 @@ class MainWindow(QtWidgets.QMainWindow):
         status_layout = QtWidgets.QHBoxLayout()
         lay.addLayout(status_layout)
         self.status = QtWidgets.QLabel('')
+        # 长文本（如下载失败的 URL）自动换行，避免撑大窗口宽度
+        self.status.setWordWrap(True)
+        self.status.setMinimumWidth(0)
+        self.status.setSizePolicy(QtWidgets.QSizePolicy.Policy.Preferred, QtWidgets.QSizePolicy.Policy.Minimum)
         self.status.setCursor(QtGui.QCursor(Qt.CursorShape.PointingHandCursor))
         self.status.setMouseTracking(True)
         status_layout.addWidget(self.status)
@@ -233,6 +252,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.vtasks = []
         self.itasks = []
         self.all_awemes = []
+        self.all_works = []  # 作品级分组数据
+        self._download_status = {}  # aweme_id -> '' | '已下载' | '下载中' | '部分完成'
         self.current_nickname = ''
 
         self.log_window = LogWindow(self)
@@ -272,6 +293,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.export_urls_btn.clicked.connect(self.on_export_urls)
         self.invert_btn.clicked.connect(self.on_invert)
         self.clear_btn.clicked.connect(self.on_clear_list)
+        self.open_folder_btn.clicked.connect(self.on_open_folder)
+        self.search_edit.textChanged.connect(self.on_search_changed)
         self.status.mousePressEvent = lambda ev: self.on_status_click(ev)
 
         self.worker.log_signal.connect(self.append_log)
@@ -320,13 +343,30 @@ class MainWindow(QtWidgets.QMainWindow):
                 if it and it.checkState(0) == Qt.CheckState.Checked:
                     count += 1
             base = getattr(self, '_last_status_text', '') or ''
+            # 超长文本（含 URL）截断显示，完整内容见日志窗口
+            if len(base) > 150:
+                base = base[:150] + '…'
             if count > 0:
                 self.status.setText(f"{base} （已选择 {count} 个）")
             else:
                 self.status.setText(base)
         except Exception:
-            pass # 忽略更新失败
-    
+            pass
+
+    def on_search_changed(self, text):
+        """搜索框文本变化 → 过滤作品列表"""
+        text = text.strip().lower()
+        for i in range(self.tree.topLevelItemCount()):
+            item = self.tree.topLevelItem(i)
+            if not item:
+                continue
+            if not text:
+                item.setHidden(False)
+            else:
+                title = item.text(5).lower()
+                author = item.text(2).lower()
+                item.setHidden(text not in title and text not in author)
+
     def on_header_section_clicked(self, logical_index):
         """处理表头点击事件"""
         if logical_index == 5:  # 类型列
@@ -358,7 +398,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.apply_type_filter()
 
     def apply_type_filter(self):
-        """应用类型筛选到列表项的选择状态"""
+        """应用类型筛选到列表项的选择状态（作品级类型）"""
         select_video = self.video_checkbox.isChecked()
         select_image = self.image_checkbox.isChecked()
         select_live = self.live_checkbox.isChecked()
@@ -368,17 +408,21 @@ class MainWindow(QtWidgets.QMainWindow):
             for i in range(self.tree.topLevelItemCount()):
                 item = self.tree.topLevelItem(i)
                 if item:
-                    item_type = item.text(5)  # 第5列是类型列
-                    
+                    item_type = item.text(4)  # 第4列=作品类型
+
                     should_select = False
                     if item_type == '视频' and select_video:
                         should_select = True
-                    elif item_type == '图片' and select_image:
+                    elif item_type == '视频+图集' and select_video and select_image:
                         should_select = True
-                    elif item_type == '实况' and select_live:
+                    elif item_type == '图集' and select_image:
+                        should_select = True
+                    elif item_type == '图集+实况' and (select_image or select_live):
+                        should_select = True
+                    elif item_type == '实况图集' and select_live:
                         should_select = True
 
-                    # 如果所有类型都被选中，则选中所有项
+                    # 全选时选中所有
                     if select_video and select_image and select_live:
                         should_select = True
 
@@ -388,38 +432,41 @@ class MainWindow(QtWidgets.QMainWindow):
                         item.setCheckState(0, Qt.CheckState.Unchecked)
         finally:
             self.tree.setUpdatesEnabled(True)
-        
+
         self.sync_filter_checkboxes()
 
     def sync_filter_checkboxes(self):
-        """同步筛选复选框状态"""
-        # 防止在同步过程中再次触发
+        """同步筛选复选框状态（作品级类型）"""
         if getattr(self, '_programmatic_change', False):
             return
-        
-        # 统计各类型项的选中情况
+
         video_total = 0
         video_selected = 0
         image_total = 0
         image_selected = 0
         live_total = 0
         live_selected = 0
-        
+
         for i in range(self.tree.topLevelItemCount()):
             item = self.tree.topLevelItem(i)
             if item:
-                item_type = item.text(5)  # 第5列是类型列
+                item_type = item.text(4)  # 第4列=作品类型
                 is_selected = item.checkState(0) == Qt.CheckState.Checked
-                
-                if item_type == '视频':
+
+                # 视频 / 视频+图集 → 计入视频
+                if item_type in ('视频', '视频+图集'):
                     video_total += 1
                     if is_selected:
                         video_selected += 1
-                elif item_type == '图片':
+
+                # 图集 / 图集+实况 / 视频+图集 → 计入图集
+                if item_type in ('图集', '图集+实况', '视频+图集'):
                     image_total += 1
                     if is_selected:
                         image_selected += 1
-                elif item_type == '实况':
+
+                # 实况图集 / 图集+实况 → 计入实况
+                if item_type in ('实况图集', '图集+实况'):
                     live_total += 1
                     if is_selected:
                         live_selected += 1
@@ -518,7 +565,7 @@ class MainWindow(QtWidgets.QMainWindow):
             pass
     
     def on_download_finished(self):
-        """下载完成处理（确保进度条是绿色）"""
+        """下载完成处理（确保进度条是绿色，并更新下载状态列）"""
         try:
             maxv = self.progress.maximum() or self.progress.value() or 1
             self.progress.setValue(maxv)
@@ -531,8 +578,54 @@ class MainWindow(QtWidgets.QMainWindow):
                 "QProgressBar { border: none; border-radius: 0px; background: #f0f0f0; text-align: center; }"
                 "QProgressBar::chunk { background-color: #4CC14C; border-radius: 0px; }"
             )
+
+            # 将本次下载的作品标记为「已下载」或「失败」
+            done_ids = getattr(self, '_downloading_ids', set())
+            failed_ids = set()
+            for t in getattr(self.worker, '_failed_tasks', []):
+                aid = t.get('aweme_id', '')
+                if aid:
+                    failed_ids.add(aid)
+
+            for i in range(self.tree.topLevelItemCount()):
+                item = self.tree.topLevelItem(i)
+                if item:
+                    work = item.data(0, Qt.ItemDataRole.UserRole)
+                    if work and work.get('aweme_id') in done_ids:
+                        if work['aweme_id'] in failed_ids:
+                            self._download_status[work['aweme_id']] = '失败'
+                            item.setText(8, '失败')
+                        else:
+                            self._download_status[work['aweme_id']] = '已下载'
+                            item.setText(8, '已下载')
         except Exception:
             pass
+
+    def on_open_folder(self):
+        """打开下载文件夹"""
+        import subprocess
+        base_folder = cfg.get('path', '') or os.getcwd()
+        download_folder = os.path.join(base_folder, '作品下载')
+        nickname = self.nickname_label.text() or ''
+        unique_id = getattr(self, 'current_unique_id', '') or ''
+        if nickname:
+            folder_name = f"{nickname}-{unique_id}" if unique_id else nickname
+            if getattr(self, '_fetch_mode', '') == 'favorite':
+                folder_name += '-like'
+            user_folder = os.path.join(download_folder, sanitize_filename(folder_name))
+        else:
+            user_folder = download_folder
+        if not os.path.exists(user_folder):
+            user_folder = download_folder if os.path.exists(download_folder) else base_folder
+        try:
+            if sys.platform.startswith('win'):
+                os.startfile(user_folder)
+            elif sys.platform == 'darwin':
+                subprocess.Popen(['open', user_folder])
+            else:
+                subprocess.Popen(['xdg-open', user_folder])
+        except Exception as e:
+            QtWidgets.QMessageBox.warning(self, '提示', f'无法打开文件夹: {e}')
 
     def on_export_excel(self):
         """导出Excel表格"""
@@ -680,8 +773,39 @@ class MainWindow(QtWidgets.QMainWindow):
         QtWidgets.QMessageBox.warning(self, '导出失败', error_msg)
         self.append_log(error_msg)
 
+    @staticmethod
+    def _format_duration(ms):
+        """毫秒 -> 'MM:SS' 或 'HH:MM:SS'"""
+        if not ms:
+            return ''
+        s = int(ms) // 1000
+        if s < 3600:
+            return f'{s // 60:02d}:{s % 60:02d}'
+        return f'{s // 3600}:{(s % 3600) // 60:02d}:{s % 60:02d}'
+
+    @staticmethod
+    def _format_media_info(work):
+        """格式化 时长/数量 列的内容"""
+        if work['video_count'] > 0:
+            dur = MainWindow._format_duration(work.get('duration_ms', 0))
+            parts = [dur] if dur else []
+            total_imgs = work['image_count'] + work['live_count']
+            if total_imgs > 0:
+                live_str = f"{work['live_count']}实况" if work['live_count'] > 0 else ''
+                img_str = f"{work['image_count']}图" if work['image_count'] > 0 else ''
+                img_parts = '+'.join(filter(None, [img_str, live_str]))
+                parts.append(f"{total_imgs}张({img_parts})")
+            return ' + '.join(parts) if parts else ''
+        total_imgs = work['image_count'] + work['live_count']
+        parts = []
+        if work['image_count'] > 0:
+            parts.append(f"{work['image_count']}张图")
+        if work['live_count'] > 0:
+            parts.append(f"{work['live_count']}张实况")
+        return '+'.join(parts) if parts else str(total_imgs)
+
     def on_tasks_received(self, vtasks, itasks, user_info, aweme_list):
-        """接收 Worker 增量获取到的作品任务"""
+        """接收 Worker 增量获取到的作品数据，按作品（aweme）分组展示"""
         self.progress.hide()
 
         nickname = user_info
@@ -692,100 +816,89 @@ class MainWindow(QtWidgets.QMainWindow):
             unique_id = parts[1]
 
         self.nickname_label.setText(nickname or '')
-
         self.current_nickname = nickname or ''
         self.current_unique_id = unique_id
 
-        if not hasattr(self, 'vtasks_all'): self.vtasks_all = []
-        if not hasattr(self, 'itasks_all'): self.itasks_all = []
+        new_works = parse_awemes_to_works(aweme_list or [])
+        self.all_works.extend(new_works)
+
+        if not hasattr(self, 'vtasks_all'):
+            self.vtasks_all = []
+        if not hasattr(self, 'itasks_all'):
+            self.itasks_all = []
         self.vtasks_all.extend(vtasks or [])
         self.itasks_all.extend(itasks or [])
 
-        # 使用Worker中累积的所有aweme数据，而不是只使用当前批次的数据
-        if hasattr(self.worker, 'all_awemes'):
+        # 批量提取模式下累加（worker.all_awemes 每个用户会重置）
+        if getattr(self, '_batch_keep_existing', False):
+            if not hasattr(self, 'all_awemes'):
+                self.all_awemes = []
+            self.all_awemes.extend(aweme_list or [])
+        elif hasattr(self.worker, 'all_awemes'):
             self.all_awemes = self.worker.all_awemes
         else:
-            if not hasattr(self, 'all_awemes'): self.all_awemes = []
+            if not hasattr(self, 'all_awemes'):
+                self.all_awemes = []
             self.all_awemes.extend(aweme_list or [])
+        # 当前用户（本次 fetch）的 awemes，供 on_fetch_finished 使用
+        if not hasattr(self, '_current_fetch_awemes'):
+            self._current_fetch_awemes = []
+        self._current_fetch_awemes.extend(aweme_list or [])
 
-        def get_type_display(desc, is_image):
-            if not is_image: return '视频'
-            if desc and isinstance(desc, str):
-                if re.search(r'_live\d*$', desc) or '_live' in desc:
-                    return '实况'
-                if re.search(r'_p\d+$', desc):
-                    return '图片'
-            return '图片'
-
+        fetch_mode_label = '点赞' if getattr(self, '_fetch_mode', '') == 'favorite' else '主页'
         items_to_add = []
         idx = self.tree.topLevelItemCount() + 1
-        
-        for t in (vtasks or []):
-            date_display = t.get('date', '')
-            desc_display = t.get('desc', '')
+
+        for work in new_works:
+            media_info = self._format_media_info(work)
+            dl_status = self._download_status.get(work['aweme_id'], '')
+
             item = QtWidgets.QTreeWidgetItem([
-                ' ', str(idx), date_display, desc_display, 
-                t.get('mix_name') or '', '视频'
+                ' ', str(idx),
+                work.get('author_nickname', ''),
+                fetch_mode_label,
+                work['work_type'],
+                work['desc'],
+                media_info,
+                work.get('resolution', ''),
+                dl_status,
+                work['date_str'],
             ])
             item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsSelectable | Qt.ItemFlag.ItemIsEnabled)
             item.setCheckState(0, Qt.CheckState.Unchecked)
-            item.setTextAlignment(0, int(Qt.AlignmentFlag.AlignLeft))
-            item.setData(0, Qt.ItemDataRole.UserRole, (t, False)) # (task, is_image=False)
+            item.setData(0, Qt.ItemDataRole.UserRole, work)
             items_to_add.append(item)
             idx += 1
 
-        for t in (itasks or []):
-            date_display = t.get('date', '')
-            desc_display = t.get('desc', '')
-            kind = get_type_display(desc_display, True)
-            item = QtWidgets.QTreeWidgetItem([
-                ' ', str(idx), date_display, desc_display, 
-                t.get('mix_name') or '', kind
-            ])
-            item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsSelectable | Qt.ItemFlag.ItemIsEnabled)
-            item.setCheckState(0, Qt.CheckState.Unchecked)
-            item.setTextAlignment(0, int(Qt.AlignmentFlag.AlignLeft))
-            item.setData(0, Qt.ItemDataRole.UserRole, (t, True)) # (task, is_image=True)
-            items_to_add.append(item)
-            idx += 1
-
-        # 批量添加项目到树形控件，分批添加以提高UI响应性
         if items_to_add:
-            BATCH_SIZE = 100  # 每批添加100个项目
+            BATCH_SIZE = 100
             total_items = len(items_to_add)
-            
-            # 如果项目数量较少，一次性添加
             if total_items <= BATCH_SIZE:
-                self.tree.setUpdatesEnabled(False)  # 暂时禁用更新以提高性能
+                self.tree.setUpdatesEnabled(False)
                 try:
                     self.tree.addTopLevelItems(items_to_add)
                 finally:
-                    self.tree.setUpdatesEnabled(True)  # 重新启用更新
+                    self.tree.setUpdatesEnabled(True)
             else:
-                # 分批添加项目
                 for i in range(0, total_items, BATCH_SIZE):
                     batch = items_to_add[i:i + BATCH_SIZE]
-                    self.tree.setUpdatesEnabled(False)  # 暂时禁用更新以提高性能
+                    self.tree.setUpdatesEnabled(False)
                     try:
                         self.tree.addTopLevelItems(batch)
-                        # 处理事件队列，保持UI响应
                         QtWidgets.QApplication.processEvents()
                     finally:
-                        self.tree.setUpdatesEnabled(True)  # 重新启用更新
-                                
-            # 有项目时显示相关按钮
+                        self.tree.setUpdatesEnabled(True)
+
             self.clear_btn.setVisible(True)
             self.select_all_btn.setVisible(True)
             self.invert_btn.setVisible(True)
-                
-
 
         self.vtasks = list(self.vtasks_all)
         self.itasks = list(self.itasks_all)
-
         self.tree.repaint()
-
         self.sync_filter_checkboxes()
+        self._last_status_text = f'已获取 {len(self.all_works)} 个作品'
+        self.update_status_label()
 
     def showEvent(self, a0):
         """窗口显示事件（用于修复列宽）"""
@@ -824,12 +937,52 @@ class MainWindow(QtWidgets.QMainWindow):
         except Exception as e:
             QtWidgets.QMessageBox.warning(self, '错误', f'无法打开用户列表: {e}')
 
+    def start_batch_fetch(self, urls):
+        """批量提取多个主页的作品（主页列表勾选的作者），作品累加到列表"""
+        if not urls:
+            return
+        if self.fetch_btn.text() == '停止获取' or \
+                (hasattr(self, '_thread') and self._thread and self._thread.is_alive()):
+            QtWidgets.QMessageBox.warning(self, '提示', '当前有任务进行中，请等待完成或停止后再批量提取')
+            return
+        self._batch_fetch_queue = list(urls)
+        self._batch_fetch_total = len(urls)
+        self._batch_fetch_done = 0
+        self.append_log(f'[信息] 开始批量提取 {len(urls)} 个主页的作品（列表累加展示）')
+        self._batch_fetch_next()
+
+    def _batch_fetch_next(self):
+        """批量提取队列：获取下一个用户的作品"""
+        queue = getattr(self, '_batch_fetch_queue', None)
+        if not queue:
+            # 全部完成
+            total = getattr(self, '_batch_fetch_total', 0)
+            if total:
+                self.append_log(f'[完成] 批量提取完成：{total} 个主页，列表共 {self.tree.topLevelItemCount()} 个作品')
+                self._batch_fetch_total = 0
+                self._batch_fetch_done = 0
+                self._batch_keep_existing = False
+            return
+        if getattr(self.worker, '_fetch_stop_requested', False):
+            self._batch_fetch_queue = []
+            self.append_log('[信息] 批量提取已停止')
+            return
+        url = queue.pop(0)
+        self._batch_fetch_done = getattr(self, '_batch_fetch_done', 0) + 1
+        # 第一个用户前清空列表，后续用户累加
+        self._batch_keep_existing = self._batch_fetch_done > 1
+        self.url_edit.setText(url)
+        self.append_log(f"[信息] 批量提取进度 {self._batch_fetch_done}/{self._batch_fetch_total}")
+        self.on_fetch()
+
     def on_fetch(self):
         """获取作品 / 停止获取"""
         if self.fetch_btn.text() == '停止获取':
             try:
                 if hasattr(self.worker, '_fetch_stop_requested'):
                     self.worker._fetch_stop_requested = True
+                # 批量提取模式下停止 → 清空队列
+                self._batch_fetch_queue = []
                 self.append_log('[信息] 已请求停止获取')
                 # 立即更新按钮状态
                 self.fetch_btn.setText('获取作品')
@@ -873,26 +1026,31 @@ class MainWindow(QtWidgets.QMainWindow):
         self.like_checkbox.setEnabled(False)
 
         try:
-            self.tree.clear()
-            self.vtasks_all = []
-            self.itasks_all = []
-            self.vtasks = []
-            self.itasks = []
-            self.all_awemes = []  # 清空aweme数据
-            self.current_nickname = '' 
-            if hasattr(self.worker, 'all_awemes'): self.worker.all_awemes = []  # 清空Worker中的aweme数据
-            if hasattr(self.worker, '_completed_tasks'): self.worker._completed_tasks = []
-            if hasattr(self.worker, '_failed_tasks'): self.worker._failed_tasks = []
-            if hasattr(self.worker, '_total_received'): self.worker._total_received = 0
-            self.progress.setValue(0)
-            self.progress.hide()
-            self.status.setText('')
-            self.append_log('[信息] 已清空上次获取的列表')
+            # 批量提取模式下：非第一个用户不清空列表，作品累加展示
+            if not getattr(self, '_batch_keep_existing', False):
+                self.tree.clear()
+                self.vtasks_all = []
+                self.itasks_all = []
+                self.vtasks = []
+                self.itasks = []
+                self.all_awemes = []  # 清空aweme数据
+                self.all_works = []   # 清空作品分组数据
+                self._download_status = {}  # 清空下载状态
+                self.current_nickname = ''
+                if hasattr(self.worker, 'all_awemes'): self.worker.all_awemes = []  # 清空Worker中的aweme数据
+                if hasattr(self.worker, '_completed_tasks'): self.worker._completed_tasks = []
+                if hasattr(self.worker, '_failed_tasks'): self.worker._failed_tasks = []
+                if hasattr(self.worker, '_total_received'): self.worker._total_received = 0
+                self.progress.setValue(0)
+                self.progress.hide()
+                self.status.setText('')
+                self.append_log('[信息] 已清空上次获取的列表')
             
 
         except Exception:
             pass
         
+        self._current_fetch_awemes = []  # 记录本次 fetch 的 awemes（批量模式下用于区分用户）
         fetch_mode = 'favorite' if self.like_checkbox.isChecked() else 'post'
         self._fetch_mode = fetch_mode
         btn_text = '停止获取'
@@ -1009,29 +1167,61 @@ class MainWindow(QtWidgets.QMainWindow):
             QtWidgets.QMessageBox.warning(self, '提示', '请先选择要下载的作品')
             return
 
-        sel_v = [d[0] for d in selected if not d[1]]  # (task, is_image=False)
-        sel_i = [d[0] for d in selected if d[1]]  # (task, is_image=True)
+        # 将选中的作品展开为扁平的下载任务列表（按作者分文件夹）
+        sel_v = []
+        sel_i = []
+        self._downloading_ids = set()
 
         base_folder = cfg.get('path', '') or os.getcwd()
-        nickname_for_folder = self.nickname_label.text() or 'Douyin_User'  # 移除了对last_nickname字段的依赖
-        unique_id = getattr(self, 'current_unique_id', '') or ''
-        
-        # 使用用户名-unique_id作为文件夹名
-        if unique_id:
-            folder_name = f"{nickname_for_folder}-{unique_id}"
-        else:
-            folder_name = nickname_for_folder or 'Douyin_Downloads'
-
-        if getattr(self, '_fetch_mode', '') == 'favorite':
-            folder_name += '-like'
-
-        # 修改路径结构为: 基础路径/作品下载/用户名-unique_id
         download_folder = os.path.join(base_folder, '作品下载')
-        user_folder = os.path.join(download_folder, sanitize_filename(folder_name))
-        
-        if not safe_mkdir(user_folder):
-            QtWidgets.QMessageBox.critical(self, '错误', f'创建目录失败: {user_folder}')
-            return
+
+        def author_folder_for(work):
+            """根据作品自身作者信息计算文件夹：作品下载/昵称-unique_id"""
+            nickname = work.get('author_nickname') or ''
+            unique_id = ''
+            aweme = work.get('aweme')
+            author = aweme.get('author') if isinstance(aweme, dict) else None
+            if isinstance(author, dict):
+                unique_id = author.get('unique_id', '') or author.get('short_id', '') or ''
+            if not nickname:
+                # 兜底：作品缺少作者信息时用当前界面上的用户
+                nickname = self.nickname_label.text() or 'Douyin_User'
+                unique_id = unique_id or (getattr(self, 'current_unique_id', '') or '')
+            folder_name = f"{nickname}-{unique_id}" if unique_id else (nickname or 'Douyin_Downloads')
+            if getattr(self, '_fetch_mode', '') == 'favorite':
+                folder_name += '-like'
+            return os.path.join(download_folder, sanitize_filename(folder_name))
+
+        user_folders = set()
+        for work in selected:
+            # 标记下载状态
+            self._download_status[work['aweme_id']] = '下载中'
+            self._downloading_ids.add(work['aweme_id'])
+            # 每个作者一个文件夹，注入到该作品的所有任务中
+            folder = author_folder_for(work)
+            user_folders.add(folder)
+            for t in work.get('video_tasks', []):
+                t['base_folder'] = folder
+            sel_v.extend(work.get('video_tasks', []))
+            for t in work.get('image_tasks', []):
+                t['base_folder'] = folder
+            sel_i.extend(work.get('image_tasks', []))
+
+        # 同步更新可见的「下载状态」列
+        for i in range(self.tree.topLevelItemCount()):
+            item = self.tree.topLevelItem(i)
+            if item:
+                work = item.data(0, Qt.ItemDataRole.UserRole)
+                if work and work.get('aweme_id') in self._downloading_ids:
+                    item.setText(8, '下载中')
+
+        # 逐个创建作者文件夹（下载器内部会再建 视频/图集 子目录）
+        for folder in user_folders:
+            if not safe_mkdir(folder):
+                QtWidgets.QMessageBox.critical(self, '错误', f'创建目录失败: {folder}')
+                return
+        # 兜底文件夹（仅当任务缺少 base_folder 时使用）
+        user_folder = sorted(user_folders)[0] if user_folders else download_folder
             
         threads = int(cfg.get('threads', DEFAULT_THREAD_COUNT))
         use_mix_folder = cfg.get('use_mix_folder', True)
@@ -1089,39 +1279,76 @@ class MainWindow(QtWidgets.QMainWindow):
         self._thread.start()
 
     def on_fetch_finished(self):
-        """获取完成处理（用于自动全选 和 保存用户）"""
+        """获取完成处理（自动全选 + 保存用户完整资料到主页列表）"""
         try:
             url = self.url_edit.text().strip()
-            nickname = self.current_nickname # 使用暂存的昵称
-            
+            nickname = self.current_nickname
+            unique_id = self.current_unique_id
+
             if url and nickname:
                 current_sec_user_id = extract_sec_user_id_from_url(url)
                 if current_sec_user_id:
                     normalized_url = f"https://www.douyin.com/user/{current_sec_user_id}"
 
-                    users = cfg.get('users', [])
-                    existing_user = None
-                    existing_user_index = -1
+                    # 计算最后发布时间（从 aweme 列表中取最新）
+                    last_publish_time = ''
+                    awemes = getattr(self, '_current_fetch_awemes', None) or self.all_awemes or []
+                    if awemes:
+                        try:
+                            timestamps = [a.get('create_time', 0) or 0 for a in awemes]
+                            max_ts = max(t for t in timestamps if t > 0) if any(t > 0) else 0
+                            if max_ts:
+                                from datetime import datetime as dt
+                                last_publish_time = dt.fromtimestamp(max_ts).strftime('%Y-%m-%d %H:%M:%S')
+                        except Exception:
+                            pass
 
+                    # 从 worker 获取 profile 统计数据
+                    profile_stats = {}
+                    if hasattr(self.worker, 'session'):
+                        from douyin_downloader.core.api import get_user_profile_info
+                        prof, prof_err = get_user_profile_info(self.worker.session, current_sec_user_id)
+                        if prof:
+                            profile_stats = prof
+                        elif prof_err:
+                            self.append_log(f'[警告] 获取用户资料失败: {prof_err}')
+
+                    users = cfg.get('users', [])
+                    existing_idx = -1
                     for idx, user in enumerate(users):
-                        user_url = user.get('url', '')
-                        user_sec_user_id = extract_sec_user_id_from_url(user_url)
-                        if user_sec_user_id == current_sec_user_id:
-                            existing_user = user
-                            existing_user_index = idx
+                        user_sec = extract_sec_user_id_from_url(user.get('url', ''))
+                        if user_sec == current_sec_user_id:
+                            existing_idx = idx
                             break
-                    
-                    if not existing_user:
-                        users.append({'username': nickname, 'url': normalized_url})
-                        cfg['users'] = users
-                        save_config(cfg)
+
+                    user_entry = {
+                        'username': nickname,
+                        'url': normalized_url,
+                        'group': '',
+                        'sec_user_id': current_sec_user_id,
+                        'last_publish_time': last_publish_time,
+                    }
+                    # 合并 API 返回的统计数据
+                    stat_keys = ['following_count', 'follower_count', 'total_favorited',
+                                 'favoriting_count', 'aweme_count']
+                    for k in stat_keys:
+                        if k in profile_stats:
+                            user_entry[k] = profile_stats[k]
+
+                    # 抖音 API 有时返回 aweme_count=0 但实际有作品，用实际数量修正
+                    _cur_awemes = getattr(self, '_current_fetch_awemes', None)
+                    if not user_entry.get('aweme_count') and _cur_awemes:
+                        user_entry['aweme_count'] = len(_cur_awemes)
+
+                    if existing_idx < 0:
+                        users.append(user_entry)
                         self.append_log(f'[信息] 已保存用户: {nickname}')
                     else:
-                        users[existing_user_index]['username'] = nickname
-                        users[existing_user_index]['url'] = normalized_url
-                        cfg['users'] = users
-                        save_config(cfg)
+                        users[existing_idx].update(user_entry)
                         self.append_log(f'[信息] 已更新用户: {nickname}')
+
+                    cfg['users'] = users
+                    save_config(cfg)
         except Exception as e:
             self.append_log(f'[警告] 保存用户信息失败: {e}')
 
@@ -1234,6 +1461,8 @@ class MainWindow(QtWidgets.QMainWindow):
             self.itasks = []
             self.all_awemes = []  # 同时清空aweme数据
             self.current_nickname = ''
+            self.all_works = []
+            self._download_status = {}
             self.progress.setValue(0)
             self.progress.hide()
             
@@ -1281,9 +1510,10 @@ class MainWindow(QtWidgets.QMainWindow):
         # 如果是用户主动停止下载，也调用下载完成的处理
         if hasattr(self.worker, '_download_stop_requested') and self.worker._download_stop_requested:
             self.on_download_finished()
-        # 如果是用户主动停止下载，隐藏进度条
-        elif hasattr(self.worker, '_download_stop_requested') and self.worker._download_stop_requested:
-            self.progress.hide()
+
+        # 批量提取队列非空 → 稍作延迟后继续下一个用户
+        if getattr(self, '_batch_fetch_queue', None):
+            QtCore.QTimer.singleShot(300, self._batch_fetch_next)
 
     def _set_window_icon(self):
         """设置窗口图标，确保任务栏也显示正确的图标"""

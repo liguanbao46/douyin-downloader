@@ -16,7 +16,8 @@ def extract_media_links_from_aweme(aweme):
       - 如果 image 项包含 'video' 字段 -> 视为实况图（只提取实况图视频 .mp4）
       - 否则 -> 视为普通图片（提取最高分辨率 url_list[-1] .jpg/.png）
       
-    返回： desc, videos[], images[], live_images[], date_str, mix_name
+    返回： desc, videos[], images[], live_images[], date_str, mix_name, create_time
+      create_time 为原始 Unix 时间戳（整数），用于设置文件修改时间。
     """
     videos, images, live_images = [], [], []
     aweme_id = aweme.get('aweme_id') or ''
@@ -30,12 +31,14 @@ def extract_media_links_from_aweme(aweme):
     if not mix_name:
         mix_name = aweme.get('mix_name') or aweme.get('mix_name_str') or None
 
-    # 转换时间戳 -> YYYY-MM-DD
+    # 转换时间戳 -> YYYY-MM-DD，并保留原始时间戳
     ts = aweme.get('create_time')
     date_str = ''
+    create_time = 0
     if ts:
         try:
-            date_str = datetime.fromtimestamp(ts).strftime("%Y-%m-%d")
+            create_time = int(ts)
+            date_str = datetime.fromtimestamp(create_time).strftime("%Y-%m-%d")
         except Exception:
             pass # 时间戳转换失败
 
@@ -83,7 +86,123 @@ def extract_media_links_from_aweme(aweme):
                 # 默认最后一个是最高分辨率
                 images.append(url_list[-1])
 
-    return desc, videos, images, live_images, date_str, mix_name
+    return desc, videos, images, live_images, date_str, mix_name, create_time
+
+
+def parse_awemes_to_works(all_awemes):
+    """
+    将 aweme 列表解析为作品级（work）分组数据。
+    每个作品一行，聚合其视频/图片/实况图信息。
+
+    返回: list[dict], 每个 dict 包含:
+      aweme, desc, date_str, mix_name,
+      work_type (视频|图集|实况图集|视频+图集),
+      video_count, image_count, live_count,
+      duration_ms, resolution, author_nickname,
+      video_tasks, image_tasks
+    """
+    works = []
+    for aweme in all_awemes:
+        desc, videos, images, live_images, date_str, mix_name, create_time = extract_media_links_from_aweme(aweme)
+
+        # ---- 聚合元信息 ----
+        author_nickname = ''
+        author = aweme.get('author')
+        if isinstance(author, dict):
+            author_nickname = author.get('nickname', '') or ''
+
+        # 视频时长（毫秒）
+        duration_ms = 0
+        video_info = aweme.get('video', {})
+        if isinstance(video_info, dict):
+            duration_ms = video_info.get('duration', 0) or 0
+
+        # 分辨率：优先取 video 顶层 width/height，其次 bit_rate 子项
+        resolution = ''
+        if videos and isinstance(video_info, dict):
+            w = video_info.get('width', 0) or 0
+            h = video_info.get('height', 0) or 0
+            if w and h:
+                resolution = f'{w}×{h}'
+            else:
+                try:
+                    rates = video_info.get('bit_rate') or []
+                    best_rate = max(rates, key=lambda x: x.get('bit_rate', 0)) if rates else None
+                    if best_rate:
+                        bw = best_rate.get('width', 0) or 0
+                        bh = best_rate.get('height', 0) or 0
+                        if bw and bh:
+                            resolution = f'{bw}×{bh}'
+                except Exception:
+                    pass
+
+        # ---- 构建子任务（与 parse_all_awemes_to_tasks 相同逻辑）----
+        video_tasks = []
+        for vurl in videos:
+            ext = get_extension_from_url(vurl, '.mp4')
+            video_tasks.append({
+                'url': vurl, 'desc': desc, 'ext': ext,
+                'date': date_str, 'mix_name': mix_name,
+                'aweme': aweme, 'aweme_id': aweme.get('aweme_id', ''),
+                'create_time': create_time,
+                'url_hash': hashlib.md5(vurl.encode('utf-8')).hexdigest()[:8],
+            })
+
+        image_tasks = []
+        for idx, iurl in enumerate(images, start=1):
+            ext = get_extension_from_url(iurl, '.jpg')
+            image_tasks.append({
+                'url': iurl, 'desc': f"{desc}_p{idx}", 'ext': ext,
+                'date': date_str, 'mix_name': mix_name,
+                'aweme_id': aweme.get('aweme_id', ''),
+                'create_time': create_time,
+                'url_hash': hashlib.md5(iurl.encode('utf-8')).hexdigest()[:8],
+            })
+        for idx, lvurl in enumerate(live_images, start=1):
+            ext = get_extension_from_url(lvurl, '.mp4')
+            image_tasks.append({
+                'url': lvurl, 'desc': f"{desc}_live{idx}", 'ext': ext,
+                'date': date_str, 'mix_name': mix_name,
+                'aweme_id': aweme.get('aweme_id', ''),
+                'create_time': create_time,
+                'url_hash': hashlib.md5(lvurl.encode('utf-8')).hexdigest()[:8],
+            })
+
+        # ---- 判断作品类型 ----
+        has_video = len(videos) > 0
+        has_image = len(images) > 0
+        has_live = len(live_images) > 0
+
+        if has_video and (has_image or has_live):
+            work_type = '视频+图集'
+        elif has_video:
+            work_type = '视频'
+        elif has_live and has_image:
+            work_type = '图集+实况'
+        elif has_live:
+            work_type = '实况图集'
+        else:
+            work_type = '图集'
+
+        works.append({
+            'aweme_id': aweme.get('aweme_id', ''),
+            'aweme': aweme,
+            'desc': desc,
+            'date_str': date_str,
+            'mix_name': mix_name or '',
+            'work_type': work_type,
+            'video_count': len(videos),
+            'image_count': len(images),
+            'live_count': len(live_images),
+            'duration_ms': duration_ms,
+            'resolution': resolution,
+            'author_nickname': author_nickname,
+            'video_tasks': video_tasks,
+            'image_tasks': image_tasks,
+            'create_time': create_time,
+        })
+
+    return works
 
 
 def parse_all_awemes_to_tasks(all_awemes):
@@ -94,7 +213,7 @@ def parse_all_awemes_to_tasks(all_awemes):
     live_count = 0
 
     for aweme in all_awemes:
-        desc, videos, images, live_images, date_str, mix_name = extract_media_links_from_aweme(aweme)
+        desc, videos, images, live_images, date_str, mix_name, create_time = extract_media_links_from_aweme(aweme)
 
         # 视频任务
         for vurl in videos:
@@ -106,6 +225,7 @@ def parse_all_awemes_to_tasks(all_awemes):
                 'date': date_str,
                 'mix_name': mix_name,
                 'aweme': aweme,
+                'create_time': create_time,
                 'url_hash': hashlib.md5(vurl.encode('utf-8')).hexdigest()[:8],
             }
             video_tasks.append(task)
@@ -120,6 +240,7 @@ def parse_all_awemes_to_tasks(all_awemes):
             image_tasks.append({
                 'url': iurl, 'desc': f"{desc}_p{idx}", 'ext': ext,
                 'date': date_str, 'mix_name': mix_name,
+                'create_time': create_time,
                 'url_hash': hashlib.md5(iurl.encode('utf-8')).hexdigest()[:8],
             })
         image_count += len(images)
@@ -130,6 +251,7 @@ def parse_all_awemes_to_tasks(all_awemes):
             image_tasks.append({
                 'url': lvurl, 'desc': f"{desc}_live{idx}", 'ext': ext,
                 'date': date_str, 'mix_name': mix_name,
+                'create_time': create_time,
                 'url_hash': hashlib.md5(lvurl.encode('utf-8')).hexdigest()[:8],
             })
         live_count += len(live_images)

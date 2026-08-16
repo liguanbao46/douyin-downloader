@@ -46,7 +46,13 @@ def resolve_short_url_and_extract(url, timeout=10, session=None):
 
 
 def get_user_profile_info(session, sec_user_id):
-    """获取用户资料信息，返回 (data_dict, error_msg) — 其一为 None"""
+    """获取用户资料信息，返回 (data_dict, error_msg) — 其一为 None
+
+    返回的 dict 包含：
+      nickname, unique_id, sec_user_id,
+      following_count, follower_count, total_favorited, favoriting_count,
+      aweme_count
+    """
     api_url = (
         f"https://www.douyin.com/aweme/v1/web/user/profile/other/"
         f"?device_platform=webapp&aid=6383&channel=channel_pc_web"
@@ -59,10 +65,17 @@ def get_user_profile_info(session, sec_user_id):
 
         if data.get('status_code') == 0 and 'user' in data:
             u = data['user']
+            # statistics 子对象包含关注/粉丝/获赞等；部分响应也会直接放在 user 顶层
+            stats = u.get('statistics') or {}
             return {
                 'nickname': u.get('nickname') or '',
                 'unique_id': u.get('unique_id') or '',
-                'aweme_count': u.get('aweme_count', None),
+                'sec_user_id': sec_user_id,
+                'aweme_count': u.get('aweme_count', 0) or stats.get('aweme_count', 0) or 0,
+                'following_count': stats.get('following_count', 0) or u.get('following_count', 0) or 0,
+                'follower_count': stats.get('follower_count', 0) or u.get('follower_count', 0) or 0,
+                'total_favorited': stats.get('total_favorited', 0) or u.get('total_favorited', 0) or 0,
+                'favoriting_count': stats.get('favoriting_count', 0) or u.get('favoriting_count', 0) or 0,
             }, None
 
         return None, f"API status_code={data.get('status_code')}, message={data.get('status_msg', '')}"

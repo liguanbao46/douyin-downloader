@@ -194,6 +194,11 @@ class SettingsWindow(QtWidgets.QDialog):
         self.chk_add_title_when_export_urls = QtWidgets.QCheckBox('导出直链时增加标题')
         self.chk_add_title_when_export_urls.setChecked(bool(cfg.get('add_title_when_export_urls', False)))
         layout.addWidget(self.chk_add_title_when_export_urls)
+        layout.addSpacing(4)
+        
+        self.chk_set_file_time = QtWidgets.QCheckBox('下载完成后修改文件时间为发布时间')
+        self.chk_set_file_time.setChecked(bool(cfg.get('set_file_time_to_publish_time', False)))
+        layout.addWidget(self.chk_set_file_time)
         
         layout.addStretch()
         
@@ -430,6 +435,7 @@ background-color: #3a8ee6; border: 1px solid #3a8ee6;
         self.chk_date_setting.setChecked(bool(cfg.get('include_date_in_filename', True)))
         self.chk_auto_select.setChecked(bool(cfg.get('auto_select_after_fetch', True)))
         self.chk_add_title_when_export_urls.setChecked(bool(cfg.get('add_title_when_export_urls', False)))
+        self.chk_set_file_time.setChecked(bool(cfg.get('set_file_time_to_publish_time', False)))
         try:
             self.threads_spin.setValue(int(cfg.get('threads', DEFAULT_THREAD_COUNT)))
         except Exception:
@@ -454,6 +460,7 @@ background-color: #3a8ee6; border: 1px solid #3a8ee6;
         cfg['include_date_in_filename'] = bool(self.chk_date_setting.isChecked())
         cfg['auto_select_after_fetch'] = bool(self.chk_auto_select.isChecked())
         cfg['add_title_when_export_urls'] = bool(self.chk_add_title_when_export_urls.isChecked())
+        cfg['set_file_time_to_publish_time'] = bool(self.chk_set_file_time.isChecked())
         cfg['threads'] = int(self.threads_spin.value())
         
         # 保存图标选择

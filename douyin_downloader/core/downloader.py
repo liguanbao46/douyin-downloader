@@ -4,39 +4,25 @@
 下载引擎 - 单文件下载（支持断点续传）
 """
 import os
-from functools import lru_cache
 
 import requests
-from requests.adapters import HTTPAdapter
-from urllib3.util.retry import Retry
 
-from douyin_downloader.constants import USER_AGENT, DOWNLOAD_CHUNK_SIZE
+from douyin_downloader.constants import DOWNLOAD_CHUNK_SIZE
 from douyin_downloader.utils.file_utils import (
-    safe_mkdir, generate_unique_filename, sanitize_filename
+    safe_mkdir, generate_unique_filename, sanitize_filename,
+    compute_download_folder, compute_base_filename, _extract_image_parts,
 )
+from douyin_downloader.gui import cfg
 
 
-@lru_cache(maxsize=1)
-def _get_default_session():
-    """缓存的默认 Session，避免重复创建连接池"""
-    s = requests.Session()
-    s.headers.update({
-        'User-Agent': USER_AGENT,
-        'Referer': 'https://www.douyin.com/',
-    })
-    retry_strategy = Retry(
-        total=3,
-        backoff_factor=1,
-        status_forcelist=[429, 500, 502, 503, 504],
-    )
-    adapter = HTTPAdapter(
-        pool_connections=10,
-        pool_maxsize=20,
-        max_retries=retry_strategy,
-    )
-    s.mount("http://", adapter)
-    s.mount("https://", adapter)
-    return s
+def _set_file_mtime(path, create_time):
+    """将文件的访问时间和修改时间设为 create_time（Unix 时间戳）"""
+    if not create_time or create_time <= 0:
+        return
+    try:
+        os.utime(path, (create_time, create_time))
+    except Exception:
+        pass  # 设置时间失败不影响下载结果
 
 
 def download_single_file(task, base_folder, is_image=False, worker=None, session=None):
@@ -48,31 +34,34 @@ def download_single_file(task, base_folder, is_image=False, worker=None, session
     desc = task['desc']
     ext = task['ext']
     mix_name = task.get('mix_name') or None
+    create_time = task.get('create_time', 0)
+    set_mtime = bool(cfg.get('set_file_time_to_publish_time', False))
 
     include_date = task.get('include_date_in_filename', True)
     date_str = task.get('date', '')
 
-    base_filename = desc
-    if include_date and date_str:
-        base_filename = f"{date_str}_{desc}"
-
-    # 1. 确定目标文件夹
-    folder = base_folder
-    if mix_name:
-        mix_clean = sanitize_filename(mix_name, max_length=100)
-        folder = os.path.join(folder, mix_clean)
-
+    # 1. 确定目标文件夹和文件名（与 build_expected_filename 共用逻辑）
     if is_image:
-        folder = os.path.join(folder, 'images')
+        base_desc, idx, is_live = _extract_image_parts(desc)
+        folder = compute_download_folder(base_folder, mix_name, is_image, base_desc, date_str, include_date)
+        if is_live:
+            base_filename = f"live{idx}" if idx else desc
+        else:
+            base_filename = str(idx) if idx else desc
+    else:
+        folder = compute_download_folder(base_folder, mix_name, is_image)
+        base_filename = compute_base_filename(desc, date_str, include_date)
 
-    safe_mkdir(folder)
+    if not safe_mkdir(folder):
+        task['_error'] = f'创建目录失败: {folder}'
+        return None
 
     # 2. 生成唯一文件名
     path = generate_unique_filename(base_filename, ext, folder, url, task.get('url_hash'))
     tmp_path = path + '.tmp'
 
     # 3. 获取 session
-    s = session or _get_default_session()
+    s = session or requests.Session()
     headers = {}
 
     # 4. 检查是否有未完成的下载（断点续传）
@@ -86,6 +75,8 @@ def download_single_file(task, base_folder, is_image=False, worker=None, session
         with s.get(url, headers=headers, stream=True, timeout=30) as r:
             if r.status_code == 416:  # Range Not Satisfiable — 文件已完整
                 os.replace(tmp_path, path)
+                if set_mtime:
+                    _set_file_mtime(path, create_time)
                 return os.path.relpath(path, base_folder)
 
             if r.status_code not in (200, 206):
@@ -105,11 +96,14 @@ def download_single_file(task, base_folder, is_image=False, worker=None, session
 
         # 下载完成，原子替换
         os.replace(tmp_path, path)
+        if set_mtime:
+            _set_file_mtime(path, create_time)
         return os.path.relpath(path, base_folder)
 
     except SystemExit:
         # 用户取消 —— 保留 .tmp 以便下次续传
         return None
-    except Exception:
-        # 其他错误 —— 保留 .tmp 以便下次续传
+    except Exception as e:
+        # 其他错误 —— 保留 .tmp 以便下次续传，记录原因供 worker 日志使用
+        task['_error'] = str(e)
         return None

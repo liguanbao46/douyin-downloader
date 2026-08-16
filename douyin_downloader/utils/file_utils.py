@@ -10,9 +10,6 @@ import hashlib
 from datetime import datetime
 from urllib.parse import unquote, urlparse
 
-# 创建目录缓存，避免重复检查
-_created_dirs = set()
-
 # 预编译正则，避免每次调用 sanitize_filename 时重新编译
 _ILLEGAL_CHARS_RE = re.compile(r'[\\/*?:"<>|#]')
 _WHITESPACE_RE = re.compile(r'\s+')
@@ -28,28 +25,19 @@ def sanitize_filename(filename, max_length=100):
         prefix = filename[:max_length // 2 - 2]
         suffix = filename[-(max_length // 2 - 1):]
         filename = f"{prefix}...{suffix}"
-    return filename
+    # Windows 不允许目录/文件名以点或空格结尾（如标题截断后的 "......"）
+    filename = filename.rstrip(' .')
+    return filename or "unknown"
 
 
 def safe_mkdir(path):
-    """安全创建目录（支持多级目录）"""
-    global _created_dirs
-    if path in _created_dirs:
-        return True
-
+    """安全创建目录（支持多级目录），成功返回 True，失败返回 False"""
     try:
         os.makedirs(path, exist_ok=True)
-        _created_dirs.add(path)
         return True
     except Exception as e:
         print(f"[错误] 创建目录失败: {path} -> {e}")
         return False
-
-
-def clear_directory_cache():
-    """清空目录创建缓存，切换用户时调用"""
-    global _created_dirs
-    _created_dirs.clear()
 
 
 def get_extension_from_url(url, default_ext='.mp4'):
@@ -94,29 +82,69 @@ def generate_unique_filename(base, ext, folder, url, url_hash=None):
     return path
 
 
+def _extract_image_parts(desc):
+    """从图片任务 desc 中提取 base_desc 和序号。
+    desc 格式: 'some_title_p3' → ('some_title', '3', False)
+                'some_title_live2' → ('some_title', '2', True)
+    无法匹配时返回 (desc, '', False)
+    """
+    m = re.match(r'^(.+?)_p(\d+)$', desc)
+    if m:
+        return m.group(1), m.group(2), False
+    m = re.match(r'^(.+?)_live(\d+)$', desc)
+    if m:
+        return m.group(1), m.group(2), True
+    return desc, '', False
+
+
+def compute_download_folder(base_folder, mix_name=None, is_image=False,
+                            base_desc=None, date_str='', include_date=True):
+    """
+    计算下载目录。
+    - 视频: base_folder/[合集/]视频/
+    - 图集: base_folder/[合集/]图集/{date}_{base_desc}/
+    worker 预检和 downloader 实际下载共用此函数，确保路径一致。
+    """
+    folder = base_folder
+    if mix_name:
+        mix_clean = sanitize_filename(mix_name, max_length=100)
+        folder = os.path.join(folder, mix_clean)
+    if is_image:
+        folder = os.path.join(folder, '图集')
+        if base_desc:
+            if include_date and date_str:
+                set_name = f"{date_str}_{base_desc}"
+            else:
+                set_name = base_desc
+            folder = os.path.join(folder, sanitize_filename(set_name, max_length=100))
+    else:
+        folder = os.path.join(folder, '视频')
+    return folder
+
+
+def compute_base_filename(desc, date_str='', include_date=True):
+    """构建基础文件名（日期前缀 + 描述）"""
+    if include_date and date_str:
+        return f"{date_str}_{desc}"
+    return desc
+
+
 def build_expected_filename(desc, ext, is_image, mix_name=None, date_str='', include_date=True):
     """
     构建预期的文件相对路径（用于去重检查）。
-    此函数模拟 `download_single_file` 中的文件夹和文件名生成逻辑（但不处理hash或重名）。
+    与 download_single_file 共用 compute_download_folder / compute_base_filename，
+    保证预检路径与实际下载路径一致（不含 hash/重名后缀）。
+    图片文件名简化为序号: '3.jpg', 'live2.mp4'
     """
-    # 根据配置动态构建基础文件名
-    base_filename = desc
-    if include_date and date_str:
-        base_filename = f"{date_str}_{desc}"
-    
-    filename = sanitize_filename(base_filename, 150) + ext
-    folder = ''
-    
-    if mix_name:
-        mix_clean = sanitize_filename(mix_name, max_length=100)
-        if is_image:
-            folder = os.path.join(mix_clean, 'images')
+    if is_image:
+        base_desc, idx, is_live = _extract_image_parts(desc)
+        folder = compute_download_folder('', mix_name, is_image, base_desc, date_str, include_date)
+        if is_live:
+            filename = f"live{idx}{ext}" if idx else sanitize_filename(desc, 150) + ext
         else:
-            folder = mix_clean
+            filename = f"{idx}{ext}" if idx else sanitize_filename(desc, 150) + ext
     else:
-        if is_image:
-            folder = 'images'
-        else:
-            folder = ''
-    
+        base_filename = compute_base_filename(desc, date_str, include_date)
+        folder = compute_download_folder('', mix_name, is_image)
+        filename = sanitize_filename(base_filename, 150) + ext
     return os.path.join(folder, filename) if folder else filename

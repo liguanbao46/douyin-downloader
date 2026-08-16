@@ -10,6 +10,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import requests
 from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 try:
     from PyQt6 import QtCore
 except ImportError:
@@ -19,7 +20,7 @@ from douyin_downloader.constants import (
     TEXT_INFO_FETCH_PAGE, PAGE_COUNT_PER_REQUEST, MAX_RETRY_DELAY
 )
 from douyin_downloader.utils.file_utils import (
-    build_expected_filename, clear_directory_cache
+    build_expected_filename
 )
 from urllib.parse import quote, urlencode
 from douyin_downloader.core.api import (
@@ -58,7 +59,16 @@ class Worker(QtCore.QObject):
         self.all_awemes = []
         self.session = requests.Session()
         self.session.headers.update({'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.6261.95 Safari/537.36'})
-        adapter = HTTPAdapter(pool_connections=10, pool_maxsize=20)
+        retry_strategy = Retry(
+            total=3,
+            backoff_factor=1,
+            status_forcelist=[429, 500, 502, 503, 504],
+        )
+        adapter = HTTPAdapter(
+            pool_connections=10,
+            pool_maxsize=20,
+            max_retries=retry_strategy,
+        )
         self.session.mount('https://', adapter)
         self.session.mount('http://', adapter)
         self.abogus = ABogus()
@@ -108,7 +118,6 @@ class Worker(QtCore.QObject):
 
             headers = {'Cookie': cookie, 'Referer': url}
             self.session.headers.update(headers)
-            clear_directory_cache()
 
             if not self._is_my_fetch(my_gen):
                 return
@@ -289,8 +298,8 @@ class Worker(QtCore.QObject):
                 include_date = t.get('include_date_in_filename', True)
                 date_str = t.get('date', '')
                 expected = build_expected_filename(t['desc'], t['ext'], False, t.get('mix_name'), date_str, include_date)
-                
-                fullpath = os.path.join(base_folder, expected)
+
+                fullpath = os.path.join(t.get('base_folder', base_folder), expected)
                 if os.path.exists(fullpath):
                     self.log_signal.emit(f"[跳过] 已存在: {expected}")
                     results_success_files.add(expected)
@@ -308,7 +317,7 @@ class Worker(QtCore.QObject):
                 date_str = t.get('date', '')
                 expected = build_expected_filename(t['desc'], t['ext'], True, t.get('mix_name'), date_str, include_date)
 
-                fullpath = os.path.join(base_folder, expected)
+                fullpath = os.path.join(t.get('base_folder', base_folder), expected)
                 if os.path.exists(fullpath):
                     self.log_signal.emit(f"[跳过] 已存在: {expected}")
                     results_success_files.add(expected)
@@ -345,7 +354,7 @@ class Worker(QtCore.QObject):
                             return
                         time.sleep(0.1)
                     
-                    future = ex.submit(self._download_with_retry, t, base_folder, is_img, MAX_RETRIES, self.session)
+                    future = ex.submit(self._download_with_retry, t, t.get('base_folder', base_folder), is_img, MAX_RETRIES, self.session)
                     future_map[future] = (t, is_img)
                     submitted_futures.append(future)
                 
@@ -373,10 +382,10 @@ class Worker(QtCore.QObject):
                             done += 1
                             self.log_signal.emit(f"[完成] {result}")
 
-                            if done % 5 == 0 or done == total:
-                                self.progress_signal.emit(done, total)
+                            self.progress_signal.emit(done, total)
                         else:
-                            self.log_signal.emit(f"[失败] {t['desc']} - URL: {t['url']}")
+                            err = t.get('_error', '')
+                            self.log_signal.emit(f"[失败] {t['desc']} - URL: {t['url']}" + (f" ({err})" if err else ""))
                             self._failed_tasks.append(t)
                     except Exception as e:
                         self.log_signal.emit(f"[失败] {t['desc']} - URL: {t['url']} ({e})")
