@@ -40,6 +40,66 @@ def safe_mkdir(path):
         return False
 
 
+def set_folder_mtime(path, create_time):
+    """
+    将目录修改时间设为 create_time（Unix 时间戳）。
+    若目录已有较新的「非刚刚创建」时间则保留较新值，避免被更旧作品批量下载回拨；
+    若目录刚创建（约 2 分钟内），则强制写成作品时间。
+    """
+    if not path or not create_time:
+        return False
+    try:
+        ts = int(create_time)
+    except (TypeError, ValueError):
+        return False
+    if ts <= 0 or not os.path.isdir(path):
+        return False
+    try:
+        cur = int(os.stat(path).st_mtime)
+    except Exception:
+        cur = 0
+    now = int(time.time())
+    # 刚 mkdir 的目录 mtime≈现在，应改成作品发布时间
+    if cur >= now - 120:
+        target = ts
+    else:
+        target = max(cur, ts)
+    try:
+        os.utime(path, (target, target))
+        return True
+    except Exception:
+        return False
+
+
+def update_author_folders_mtime(tasks, fallback_folder=''):
+    """
+    更新「作者名称」文件夹的修改时间（作品下载/{昵称-unique_id}/），
+    取该作者本次任务中最大的 create_time；不改动其下的 视频/图集 子目录。
+    tasks: 可迭代的 task dict（含 base_folder / create_time）
+    """
+    folder_latest = {}
+    for t in tasks or []:
+        if not isinstance(t, dict):
+            continue
+        folder = t.get('base_folder') or fallback_folder
+        if not folder:
+            continue
+        try:
+            ct = int(t.get('create_time') or 0)
+        except (TypeError, ValueError):
+            ct = 0
+        if ct <= 0:
+            continue
+        prev = folder_latest.get(folder, 0)
+        if ct > prev:
+            folder_latest[folder] = ct
+    updated = 0
+    for folder, ct in folder_latest.items():
+        if set_folder_mtime(folder, ct):
+            updated += 1
+    return updated
+
+
 def get_extension_from_url(url, default_ext='.mp4'):
     """从URL提取文件扩展名"""
     try:

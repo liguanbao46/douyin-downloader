@@ -6,13 +6,63 @@ GUI - Browser Configuration Dialog
 import sys
 import os
 try:
-    from PyQt6 import QtWidgets
+    from PyQt6 import QtWidgets, QtCore
     from PyQt6.QtCore import Qt
 except ImportError:
     print("[错误] PyQt6 未安装或无法导入: \n请安装 PyQt6 后重试（pip install PyQt6）。")
     sys.exit(1)
 
 from douyin_downloader.utils.config import load_config, save_config
+
+
+class _BrowserTestWorker(QtCore.QObject):
+    """后台测试浏览器启动"""
+    finished_ok = QtCore.pyqtSignal()
+    finished_err = QtCore.pyqtSignal(str)
+
+    def run(self, chrome_path, edge_path):
+        playwright = None
+        browser = None
+        context = None
+        page = None
+        try:
+            from playwright.sync_api import sync_playwright
+            playwright = sync_playwright()
+            playwright_instance = playwright.start()
+            if chrome_path and os.path.exists(chrome_path):
+                browser = playwright_instance.chromium.launch(
+                    headless=False, executable_path=chrome_path
+                )
+            elif edge_path and os.path.exists(edge_path):
+                browser = playwright_instance.chromium.launch(
+                    headless=False, executable_path=edge_path
+                )
+            else:
+                browser = playwright_instance.chromium.launch(headless=False)
+            context = browser.new_context()
+            page = context.new_page()
+            page.goto("https://www.douyin.com/?recommend=1")
+            self.finished_ok.emit()
+        except ImportError:
+            self.finished_err.emit(
+                '未安装Playwright库，请运行: pip install playwright\n'
+                '然后运行: playwright install chromium'
+            )
+        except Exception as e:
+            self.finished_err.emit(f'浏览器启动失败: {str(e)}')
+        finally:
+            for closer in (page, context, browser):
+                try:
+                    if closer:
+                        closer.close()
+                except Exception:
+                    pass
+            try:
+                if playwright:
+                    playwright.__exit__(None, None, None)
+            except Exception:
+                pass
+
 
 class BrowserConfigWindow(QtWidgets.QDialog):
     """浏览器配置窗口"""
@@ -185,79 +235,37 @@ class BrowserConfigWindow(QtWidgets.QDialog):
         self.accept()
     
     def on_test(self):
-        """测试按钮事件"""
+        """测试按钮事件（后台线程启动浏览器，避免卡住界面）"""
         self.save_settings()
 
         from douyin_downloader.utils.config import load_config
         config = load_config()
         chrome_path = config.get('chrome_path', '').strip()
         edge_path = config.get('edge_path', '').strip()
-        
+
         if not chrome_path and not edge_path:
             QtWidgets.QMessageBox.warning(self, '测试失败', '请先配置浏览器路径')
             return
-        
-        playwright = None
-        browser = None
-        context = None
-        page = None
-        
-        try:
-            from playwright.sync_api import sync_playwright
-            
-            playwright = sync_playwright()
-            playwright_instance = playwright.start()
-            
-            if chrome_path and os.path.exists(chrome_path):
-                browser = playwright_instance.chromium.launch(
-                    headless=False,
-                    executable_path=chrome_path
-                )
-            elif edge_path and os.path.exists(edge_path):
-                browser = playwright_instance.chromium.launch(
-                    headless=False,
-                    executable_path=edge_path
-                )
-            else:
-                browser = playwright_instance.chromium.launch(headless=False)
 
-            context = browser.new_context()
-            page = context.new_page()
-            page.goto("https://www.douyin.com/?recommend=1")
-            
-            # 如果能成功打开页面，则测试成功
+        self.test_btn.setEnabled(False)
+        self.test_btn.setText('测试中...')
+
+        import threading
+
+        worker = _BrowserTestWorker(self)
+
+        def _ok():
+            self.test_btn.setEnabled(True)
+            self.test_btn.setText('测试')
             QtWidgets.QMessageBox.information(self, '测试成功', '浏览器配置正确，可以正常启动')
-            
-        except ImportError:
-            QtWidgets.QMessageBox.warning(
-                self, 
-                '测试失败', 
-                '未安装Playwright库，请运行: pip install playwright\n然后运行: playwright install chromium'
-            )
-        except Exception as e:
-            QtWidgets.QMessageBox.warning(self, '测试失败', f'浏览器启动失败: {str(e)}')
-        finally:
-            # 确保正确关闭所有资源
-            try:
-                if page:
-                    page.close()
-            except Exception:
-                pass
-                
-            try:
-                if context:
-                    context.close()
-            except Exception:
-                pass
-                
-            try:
-                if browser:
-                    browser.close()
-            except Exception:
-                pass
-                
-            try:
-                if playwright:
-                    playwright.__exit__(None, None, None)
-            except Exception:
-                pass
+
+        def _err(msg):
+            self.test_btn.setEnabled(True)
+            self.test_btn.setText('测试')
+            QtWidgets.QMessageBox.warning(self, '测试失败', msg)
+
+        worker.finished_ok.connect(_ok)
+        worker.finished_err.connect(_err)
+        threading.Thread(
+            target=worker.run, args=(chrome_path, edge_path), daemon=True
+        ).start()

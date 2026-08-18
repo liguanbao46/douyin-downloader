@@ -14,7 +14,10 @@ except ImportError:
 
 from douyin_downloader.gui import cfg
 from douyin_downloader.utils.config import save_config
-from douyin_downloader.constants import DEFAULT_THREAD_COUNT, ICON_BYTES_OPTIONS, CUSTOM_ICON_PATH
+from douyin_downloader.constants import (
+    DEFAULT_THREAD_COUNT, ICON_BYTES_OPTIONS, CUSTOM_ICON_PATH,
+    DEFAULT_MONITOR_INTERVAL_MINUTES, MONITOR_INTERVAL_MIN, MONITOR_INTERVAL_MAX,
+)
 from .dialog_about import AboutWindow, TutorialWindow
 from .dialog_cookie import CookieFetchWindow
 from .dialog_browser import BrowserConfigWindow
@@ -199,7 +202,32 @@ class SettingsWindow(QtWidgets.QDialog):
         self.chk_set_file_time = QtWidgets.QCheckBox('下载完成后修改文件时间为发布时间')
         self.chk_set_file_time.setChecked(bool(cfg.get('set_file_time_to_publish_time', False)))
         layout.addWidget(self.chk_set_file_time)
-        
+        layout.addSpacing(10)
+
+        self.chk_monitor_enabled = QtWidgets.QCheckBox('启用主页监控（仅软件打开时轮询，发现新作自动下载）')
+        self.chk_monitor_enabled.setChecked(bool(cfg.get('monitor_enabled', False)))
+        layout.addWidget(self.chk_monitor_enabled)
+        layout.addSpacing(4)
+
+        monitor_interval_layout = QtWidgets.QHBoxLayout()
+        monitor_interval_layout.addWidget(QtWidgets.QLabel('监控检查间隔(分钟):'))
+        self.monitor_interval_spin = QtWidgets.QSpinBox()
+        self.monitor_interval_spin.setMinimum(MONITOR_INTERVAL_MIN)
+        self.monitor_interval_spin.setMaximum(MONITOR_INTERVAL_MAX)
+        try:
+            self.monitor_interval_spin.setValue(int(
+                cfg.get('monitor_interval_minutes', DEFAULT_MONITOR_INTERVAL_MINUTES)
+            ))
+        except Exception:
+            self.monitor_interval_spin.setValue(DEFAULT_MONITOR_INTERVAL_MINUTES)
+        try:
+            self.monitor_interval_spin.setButtonSymbols(QtWidgets.QAbstractSpinBox.ButtonSymbols.NoButtons)
+        except Exception:
+            pass
+        monitor_interval_layout.addWidget(self.monitor_interval_spin)
+        monitor_interval_layout.addStretch()
+        layout.addLayout(monitor_interval_layout)
+
         layout.addStretch()
         
         button_layout = QtWidgets.QHBoxLayout()
@@ -436,6 +464,13 @@ background-color: #3a8ee6; border: 1px solid #3a8ee6;
         self.chk_auto_select.setChecked(bool(cfg.get('auto_select_after_fetch', True)))
         self.chk_add_title_when_export_urls.setChecked(bool(cfg.get('add_title_when_export_urls', False)))
         self.chk_set_file_time.setChecked(bool(cfg.get('set_file_time_to_publish_time', False)))
+        self.chk_monitor_enabled.setChecked(bool(cfg.get('monitor_enabled', False)))
+        try:
+            self.monitor_interval_spin.setValue(int(
+                cfg.get('monitor_interval_minutes', DEFAULT_MONITOR_INTERVAL_MINUTES)
+            ))
+        except Exception:
+            self.monitor_interval_spin.setValue(DEFAULT_MONITOR_INTERVAL_MINUTES)
         try:
             self.threads_spin.setValue(int(cfg.get('threads', DEFAULT_THREAD_COUNT)))
         except Exception:
@@ -461,6 +496,8 @@ background-color: #3a8ee6; border: 1px solid #3a8ee6;
         cfg['auto_select_after_fetch'] = bool(self.chk_auto_select.isChecked())
         cfg['add_title_when_export_urls'] = bool(self.chk_add_title_when_export_urls.isChecked())
         cfg['set_file_time_to_publish_time'] = bool(self.chk_set_file_time.isChecked())
+        cfg['monitor_enabled'] = bool(self.chk_monitor_enabled.isChecked())
+        cfg['monitor_interval_minutes'] = int(self.monitor_interval_spin.value())
         cfg['threads'] = int(self.threads_spin.value())
         
         # 保存图标选择
@@ -488,9 +525,13 @@ background-color: #3a8ee6; border: 1px solid #3a8ee6;
         try:
             # 2. 持久化到 config.ini
             save_config(cfg)
+
+            # 通知主窗口刷新监控定时器
+            parent_window = self.parent()
+            if parent_window and hasattr(parent_window, 'reload_monitor_timer'):
+                parent_window.reload_monitor_timer()
             
             # 3. 通知主窗口
-            parent_window = self.parent()
             if parent_window and hasattr(parent_window, 'append_log'):
                 append_log_func = getattr(parent_window, 'append_log', None)
                 if append_log_func:

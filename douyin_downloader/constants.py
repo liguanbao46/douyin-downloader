@@ -3,6 +3,18 @@
 """
 常量定义
 """
+import os
+import sys
+
+
+def _app_base_dir():
+    """程序根目录：开发时为项目根；打包后为 exe 所在目录（配置可写）"""
+    if getattr(sys, 'frozen', False):
+        return os.path.dirname(os.path.abspath(sys.executable))
+    return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+APP_DIR = _app_base_dir()
 
 TEXT_APP_NAME = "抖音主页作品批量下载 V3.8 - YanRuYing"
 
@@ -28,16 +40,21 @@ ICON_BYTES_OPTIONS = {
 }
 
 
-CUSTOM_ICON_PATH = "custom_icon.png"
+CUSTOM_ICON_PATH = os.path.join(APP_DIR, 'custom_icon.png')
 
 USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.6261.95 Safari/537.36'
 REQUEST_TIMEOUT = 12
 PAGE_COUNT_PER_REQUEST = 50
 DELAY_BETWEEN_PAGES = 0.1
 
-CONFIG_FILE = 'config.ini'
+CONFIG_FILE = os.path.join(APP_DIR, 'config.ini')
+AWEME_ID_RECORDS_FILE = os.path.join(APP_DIR, 'aweme_id_records.json')
 
 DEFAULT_THREAD_COUNT = 4
+DEFAULT_MONITOR_INTERVAL_MINUTES = 15
+MONITOR_INTERVAL_MIN = 5
+MONITOR_INTERVAL_MAX = 120
+MONITOR_CHECK_COUNT = 20  # 监控轮询每页作品数
 
 DOWNLOAD_CHUNK_SIZE = 512 * 1024  # 512KB 下载块
 MAX_RETRY_DELAY = 10  # 限制最大重试等待时间为10秒

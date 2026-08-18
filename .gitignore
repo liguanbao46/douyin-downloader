@@ -7,6 +7,9 @@ __pycache__/
 config.ini
 custom_icon.png
 
+# 运行时数据
+aweme_id_records.json
+
 # 打包产物
 build/
 dist/

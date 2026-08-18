@@ -6,6 +6,7 @@
 import os
 import sys
 import time
+import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import requests
@@ -17,10 +18,10 @@ except ImportError:
     print("[错误] PyQt6 未安装或无法导入: \n请安装 PyQt6 后重试（pip install PyQt6）。")
     sys.exit(1)
 from douyin_downloader.constants import (
-    TEXT_INFO_FETCH_PAGE, PAGE_COUNT_PER_REQUEST, MAX_RETRY_DELAY
+    TEXT_INFO_FETCH_PAGE, PAGE_COUNT_PER_REQUEST, MAX_RETRY_DELAY, USER_AGENT
 )
 from douyin_downloader.utils.file_utils import (
-    build_expected_filename
+    build_expected_filename, update_author_folders_mtime
 )
 from urllib.parse import quote, urlencode
 from douyin_downloader.core.api import (
@@ -49,7 +50,8 @@ class Worker(QtCore.QObject):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._pause_requested = False
-        self._fetch_stop_requested = False
+        self._fetch_stop_requested = False  # 用户主动停止
+        self._fetch_no_more_pages = False   # 筛选达标，正常结束翻页（非取消）
         self._download_stop_requested = False
         self._fetch_generation = 0
         
@@ -58,7 +60,7 @@ class Worker(QtCore.QObject):
         self._total_received = 0
         self.all_awemes = []
         self.session = requests.Session()
-        self.session.headers.update({'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.6261.95 Safari/537.36'})
+        self.session.headers.update({'User-Agent': USER_AGENT})
         retry_strategy = Retry(
             total=3,
             backoff_factor=1,
@@ -72,6 +74,37 @@ class Worker(QtCore.QObject):
         self.session.mount('https://', adapter)
         self.session.mount('http://', adapter)
         self.abogus = ABogus()
+        self._download_tls = threading.local()
+
+    def _clone_session(self):
+        """复制一份独立 Session，供下载线程使用（requests.Session 非线程安全）"""
+        session = requests.Session()
+        session.headers.update(dict(self.session.headers))
+        try:
+            session.cookies.update(self.session.cookies)
+        except Exception:
+            pass
+        retry_strategy = Retry(
+            total=3,
+            backoff_factor=1,
+            status_forcelist=[429, 500, 502, 503, 504],
+        )
+        adapter = HTTPAdapter(
+            pool_connections=4,
+            pool_maxsize=8,
+            max_retries=retry_strategy,
+        )
+        session.mount('https://', adapter)
+        session.mount('http://', adapter)
+        return session
+
+    def _session_for_download_thread(self):
+        """每个下载工作线程持有自己的 Session"""
+        session = getattr(self._download_tls, 'session', None)
+        if session is None:
+            session = self._clone_session()
+            self._download_tls.session = session
+        return session
 
         
     def should_stop_download(self):
@@ -101,11 +134,12 @@ class Worker(QtCore.QObject):
         """检查当前线程的 fetch 代际是否仍然有效"""
         return self._fetch_generation == gen
 
-    def fetch_tasks(self, url, cookie, fetch_mode='post'):
+    def fetch_tasks(self, url, cookie, fetch_mode='post', latest_only=False):
         """
         获取用户作品列表（在单独线程中运行）。
         采用分页增量方式，每获取一页就通过 tasks_signal 发回 GUI。
         fetch_mode: 'post' 获取主页作品, 'favorite' 获取点赞作品
+        latest_only: True 时只获取第一页最新作品，不翻历史分页
         """
         # 递增代际，使旧 fetch 线程失效
         self._fetch_generation += 1
@@ -122,7 +156,10 @@ class Worker(QtCore.QObject):
             if not self._is_my_fetch(my_gen):
                 return
             mode_label = '点赞作品' if fetch_mode == 'favorite' else '主页作品'
-            self.log_signal.emit(f'[信息] 开始获取{mode_label}')
+            if latest_only:
+                self.log_signal.emit(f'[信息] 开始获取{mode_label}（仅最新一页）')
+            else:
+                self.log_signal.emit(f'[信息] 开始获取{mode_label}')
 
             sec = resolve_short_url_and_extract(url, session=self.session)
             if not sec:
@@ -150,6 +187,10 @@ class Worker(QtCore.QObject):
                     if self._is_my_fetch(my_gen):
                         self.log_signal.emit('[信息] 获取已停止')
                     break
+                if getattr(self, '_fetch_no_more_pages', False):
+                    if self._is_my_fetch(my_gen):
+                        self.log_signal.emit('[信息] 已达筛选条件，结束翻页')
+                    break
 
                 if not self._is_my_fetch(my_gen):
                     return
@@ -168,6 +209,10 @@ class Worker(QtCore.QObject):
                     if getattr(self, '_fetch_stop_requested', False):
                         if self._is_my_fetch(my_gen):
                             self.log_signal.emit('[信息] 获取已停止')
+                        break
+                    if getattr(self, '_fetch_no_more_pages', False):
+                        if self._is_my_fetch(my_gen):
+                            self.log_signal.emit('[信息] 已达筛选条件，结束翻页')
                         break
                     if not self._is_my_fetch(my_gen):
                         return
@@ -201,12 +246,17 @@ class Worker(QtCore.QObject):
                 max_cursor = data.get('max_cursor', 0)
                 has_more = data.get('has_more', 0) == 1
                 page += 1
-                
+
                 # 自适应延迟：根据响应时间调整等待
                 elapsed = time.time() - req_start
                 adaptive_delay = max(0.1, min(1.0, elapsed * 0.5))
                 time.sleep(adaptive_delay)
-                
+
+                if latest_only:
+                    if self._is_my_fetch(my_gen):
+                        self.log_signal.emit('[信息] 仅最新模式：已获取第一页，停止翻页')
+                    break
+
                 if not has_more:
                     break
             
@@ -226,10 +276,14 @@ class Worker(QtCore.QObject):
                     pass
                 self.finished.emit()
 
-    def _download_with_retry(self, task, base_folder, is_image, max_retries, session):
+    def _download_with_retry(self, task, base_folder, is_image, max_retries, session=None):
         """
-        带重试机制的下载函数，视频任务依次尝试不同码率
+        带重试机制的下载函数，视频任务依次尝试不同码率。
+        session 默认在当前线程内懒创建，保证线程池中各 worker 互不共享。
         """
+        if session is None:
+            session = self._session_for_download_thread()
+
         is_video_task = not is_image and 'aweme' in task
 
         bitrate_urls = []
@@ -287,6 +341,10 @@ class Worker(QtCore.QObject):
         """
         try:
             self.log_signal.emit('[信息] 检查已存在文件...')
+            self._failed_tasks = []
+            self._completed_tasks = []
+            # 新一轮下载重建线程局部 Session，带上最新 Cookie/Headers
+            self._download_tls = threading.local()
             all_tasks = []
             results_success_files = set()
             
@@ -326,12 +384,19 @@ class Worker(QtCore.QObject):
                 else:
                     all_tasks.append((t, True)) # (task, is_image=True)
 
+            total_files = len(vtasks) + len(itasks)
             total = len(all_tasks)
-            done = 0
+            done = max(0, total_files - total)  # 已存在跳过计入进度
             
+            if total_files > 0:
+                self.progress_signal.emit(done, total_files)
+
             if total == 0:
                 self.log_signal.emit('[信息] 没有需要下载的新文件。')
-                self.progress_signal.emit(1, 1)
+                self.progress_signal.emit(max(1, total_files), max(1, total_files))
+                n = update_author_folders_mtime(list(vtasks) + list(itasks), base_folder)
+                if n:
+                    self.log_signal.emit(f'[信息] 已更新 {n} 个作者文件夹的修改时间为最新作品时间')
                 self.download_finished.emit()
                 self.finished.emit()
                 return
@@ -354,7 +419,13 @@ class Worker(QtCore.QObject):
                             return
                         time.sleep(0.1)
                     
-                    future = ex.submit(self._download_with_retry, t, t.get('base_folder', base_folder), is_img, MAX_RETRIES, self.session)
+                    future = ex.submit(
+                        self._download_with_retry,
+                        t,
+                        t.get('base_folder', base_folder),
+                        is_img,
+                        MAX_RETRIES,
+                    )
                     future_map[future] = (t, is_img)
                     submitted_futures.append(future)
                 
@@ -382,19 +453,27 @@ class Worker(QtCore.QObject):
                             done += 1
                             self.log_signal.emit(f"[完成] {result}")
 
-                            self.progress_signal.emit(done, total)
+                            self.progress_signal.emit(done, max(1, total_files))
                         else:
                             err = t.get('_error', '')
                             self.log_signal.emit(f"[失败] {t['desc']} - URL: {t['url']}" + (f" ({err})" if err else ""))
                             self._failed_tasks.append(t)
+                            done += 1
+                            self.progress_signal.emit(done, max(1, total_files))
                     except Exception as e:
                         self.log_signal.emit(f"[失败] {t['desc']} - URL: {t['url']} ({e})")
                         self._failed_tasks.append(t)
+                        done += 1
+                        self.progress_signal.emit(done, max(1, total_files))
             
-            self.progress_signal.emit(total, total)
+            self.progress_signal.emit(max(1, total_files), max(1, total_files))
 
             normalized_base_folder = base_folder.replace('\\', '/').replace('\\', '/')
             self.log_signal.emit(f"[日志] 本次成功下载文件 {len(results_success_files)} 个（目录: {normalized_base_folder}）")
+
+            n = update_author_folders_mtime(list(vtasks) + list(itasks), base_folder)
+            if n:
+                self.log_signal.emit(f'[信息] 已更新 {n} 个作者文件夹的修改时间为最新作品时间')
 
             self.download_finished.emit()
 
