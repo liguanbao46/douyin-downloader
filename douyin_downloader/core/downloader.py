@@ -11,6 +11,7 @@ from douyin_downloader.constants import DOWNLOAD_CHUNK_SIZE
 from douyin_downloader.utils.file_utils import (
     safe_mkdir, generate_unique_filename, sanitize_filename,
     compute_download_folder, compute_base_filename, _extract_image_parts,
+    mirror_file_to_flat,
 )
 from douyin_downloader.gui import cfg
 
@@ -23,6 +24,19 @@ def _set_file_mtime(path, create_time):
         os.utime(path, (create_time, create_time))
     except Exception:
         pass  # 设置时间失败不影响下载结果
+
+
+def _mirror_if_needed(task, path, worker=None):
+    """图集扁平镜像：下载成功后复制一份到独立扁平目录（与原有结构并存）"""
+    mirror_base = task.get('flat_mirror_folder')
+    if not mirror_base:
+        return
+    dst, copied = mirror_file_to_flat(path, task, mirror_base)
+    if copied and dst and worker:
+        try:
+            worker.log_signal.emit(f"[镜像] 已同步到扁平目录: {os.path.basename(dst)}")
+        except Exception:
+            pass
 
 
 def download_single_file(task, base_folder, is_image=False, worker=None, session=None):
@@ -42,10 +56,12 @@ def download_single_file(task, base_folder, is_image=False, worker=None, session
 
     # 1. 确定目标文件夹和文件名（与 build_expected_filename 共用逻辑）
     if is_image:
-        base_desc, idx, is_live = _extract_image_parts(desc)
+        base_desc, idx, media_type = _extract_image_parts(desc)
         folder = compute_download_folder(base_folder, mix_name, is_image, base_desc, date_str, include_date)
-        if is_live:
+        if media_type == 'live':
             base_filename = f"live{idx}" if idx else desc
+        elif media_type == 'cover':
+            base_filename = f"live{idx}_cover" if idx else desc
         else:
             base_filename = str(idx) if idx else desc
     else:
@@ -77,6 +93,7 @@ def download_single_file(task, base_folder, is_image=False, worker=None, session
                 os.replace(tmp_path, path)
                 if set_mtime:
                     _set_file_mtime(path, create_time)
+                _mirror_if_needed(task, path, worker)
                 return os.path.relpath(path, base_folder)
 
             if r.status_code not in (200, 206):
@@ -98,6 +115,7 @@ def download_single_file(task, base_folder, is_image=False, worker=None, session
         os.replace(tmp_path, path)
         if set_mtime:
             _set_file_mtime(path, create_time)
+        _mirror_if_needed(task, path, worker)
         return os.path.relpath(path, base_folder)
 
     except SystemExit:

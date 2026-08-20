@@ -72,103 +72,127 @@ class MainWindow(QtWidgets.QMainWindow):
         self._set_window_icon()
         central = QtWidgets.QWidget()
         self.setCentralWidget(central)
-        root = QtWidgets.QHBoxLayout(central)
-        root.setContentsMargins(0, 0, 0, 0)
-        root.setSpacing(0)
+        central_layout = QtWidgets.QVBoxLayout(central)
+        central_layout.setContentsMargins(0, 0, 0, 0)
+        central_layout.setSpacing(0)
+
+        # 顶部导航栏
+        self.top_nav = QtWidgets.QWidget()
+        self.top_nav.setObjectName('top_nav')
+        self.top_nav.setFixedHeight(40)
+        self.top_nav.setStyleSheet('background-color: #FFFFFF; border-bottom: 1px solid #E5E5EA;')
+        top_layout = QtWidgets.QHBoxLayout(self.top_nav)
+        top_layout.setContentsMargins(12, 0, 12, 0)
+        top_layout.setSpacing(8)
+        brand_label = QtWidgets.QLabel('抖音下载器')
+        brand_font = brand_label.font()
+        brand_font.setPointSize(14)
+        brand_font.setBold(True)
+        brand_label.setFont(brand_font)
+        top_layout.addWidget(brand_label)
+        top_layout.addStretch()
+        self.view_log_btn = QtWidgets.QPushButton('查看日志')
+        self.settings_btn_top = QtWidgets.QPushButton('设置')
+        self.settings_btn_top.setObjectName('icon_btn')
+        top_layout.addWidget(self.view_log_btn)
+        top_layout.addWidget(self.settings_btn_top)
+        central_layout.addWidget(self.top_nav)
+
+        # 主体：侧边栏 + 页面栈
+        body = QtWidgets.QHBoxLayout()
+        body.setContentsMargins(0, 0, 0, 0)
+        body.setSpacing(0)
+        central_layout.addLayout(body, 1)
 
         # 左侧导航
         self.nav_list = QtWidgets.QListWidget()
-        self.nav_list.setFixedWidth(110)
+        self.nav_list.setFixedWidth(200)
         self.nav_list.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.nav_list.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.nav_list.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.nav_list.addItem('作品列表')
         self.nav_list.addItem('主页列表')
+        self.nav_list.addItem('下载记录')
         self.nav_list.setCurrentRow(0)
-        self.nav_list.setStyleSheet("""
-            QListWidget {
-                background: #f5f7fa;
-                border: none;
-                border-right: 1px solid #e4e7ed;
-                outline: 0;
-                font-size: 13px;
-                padding-top: 8px;
-            }
-            QListWidget::item {
-                padding: 12px 8px;
-                color: #303133;
-            }
-            QListWidget::item:hover {
-                background: #e6f2ff;
-            }
-            QListWidget::item:selected {
-                background: #409EFF;
-                color: #ffffff;
-            }
-        """)
-        root.addWidget(self.nav_list)
+        body.addWidget(self.nav_list)
 
         self.page_stack = QtWidgets.QStackedWidget()
-        root.addWidget(self.page_stack, 1)
+        body.addWidget(self.page_stack, 1)
 
         works_page = QtWidgets.QWidget()
+        works_page.setObjectName('works_page')
         lay = QtWidgets.QVBoxLayout(works_page)
-        lay.setContentsMargins(8, 8, 8, 8)
+        lay.setContentsMargins(16, 16, 16, 16)
+        lay.setSpacing(12)
 
-        form = QtWidgets.QGridLayout()
-        lay.addLayout(form)
-        # "主页链接" 标签做成按钮，点击可打开用户列表
+        # 第一行：主页链接
+        row1 = QtWidgets.QHBoxLayout()
+        row1.setSpacing(8)
         self.url_label_btn = QtWidgets.QPushButton('主页链接:')
+        self.url_label_btn.setObjectName('url_label_btn')
         self.url_label_btn.setFlat(True)
         self.url_label_btn.setCursor(QtGui.QCursor(Qt.CursorShape.PointingHandCursor))
-        form.addWidget(self.url_label_btn, 0, 0)
+        row1.addWidget(self.url_label_btn)
         self.url_edit = QtWidgets.QLineEdit()
-        form.addWidget(self.url_edit, 0, 1, 1, 1)
+        self.url_edit.setPlaceholderText('粘贴抖音主页链接，例如 https://www.douyin.com/user/xxx')
+        row1.addWidget(self.url_edit, 1)
         self.like_checkbox = QtWidgets.QCheckBox('点赞作品')
-        form.addWidget(self.like_checkbox, 0, 2)
+        row1.addWidget(self.like_checkbox)
         self.latest_only_checkbox = QtWidgets.QCheckBox('仅最新')
         self.latest_only_checkbox.setToolTip('只获取第一页最新作品，不翻页拉取历史')
         self.latest_only_checkbox.setChecked(bool(cfg.get('fetch_latest_only', False)))
-        form.addWidget(self.latest_only_checkbox, 0, 3)
+        row1.addWidget(self.latest_only_checkbox)
         self.fetch_btn = QtWidgets.QPushButton('获取作品')
-        form.addWidget(self.fetch_btn, 0, 4)
+        self.fetch_btn.setObjectName('fetch_btn')
+        row1.addWidget(self.fetch_btn)
+        lay.addLayout(row1)
 
-
-        btns = QtWidgets.QHBoxLayout()
-        lay.addLayout(btns)
+        # 第二行：按钮组
+        row2 = QtWidgets.QHBoxLayout()
+        row2.setSpacing(8)
+        left_btns = QtWidgets.QHBoxLayout()
+        left_btns.setSpacing(8)
         self.settings_btn = QtWidgets.QPushButton('设置')
-        self.clear_btn = QtWidgets.QPushButton('清空列表')
-        self.select_all_btn = QtWidgets.QPushButton('全选')
-        self.invert_btn = QtWidgets.QPushButton('反选')
         self.export_urls_btn = QtWidgets.QPushButton('导出直链')
         self.export_excel_btn = QtWidgets.QPushButton('导出Excel')
+        left_btns.addWidget(self.settings_btn)
+        left_btns.addWidget(self.export_urls_btn)
+        left_btns.addWidget(self.export_excel_btn)
+        right_btns = QtWidgets.QHBoxLayout()
+        right_btns.setSpacing(8)
+        self.select_all_btn = QtWidgets.QPushButton('全选')
+        self.invert_btn = QtWidgets.QPushButton('反选')
+        self.clear_btn = QtWidgets.QPushButton('清空列表')
         self.download_btn = QtWidgets.QPushButton('开始下载')
+        self.download_btn.setObjectName('download_btn')
         self.open_folder_btn = QtWidgets.QPushButton('打开文件夹')
+        right_btns.addWidget(self.select_all_btn)
+        right_btns.addWidget(self.invert_btn)
+        right_btns.addWidget(self.clear_btn)
+        right_btns.addWidget(self.download_btn)
+        right_btns.addWidget(self.open_folder_btn)
+        row2.addLayout(left_btns)
+        row2.addStretch()
+        row2.addLayout(right_btns)
+        lay.addLayout(row2)
 
-        btns.addWidget(self.settings_btn)
-        btns.addWidget(self.export_urls_btn)
-        btns.addWidget(self.export_excel_btn)
-        btns.addStretch()
-        btns.addWidget(self.select_all_btn)
-        btns.addWidget(self.invert_btn)
-        btns.addWidget(self.clear_btn)
-        
         if not OPENPYXL_AVAILABLE:
             self.export_excel_btn.setEnabled(False)
             self.export_excel_btn.setToolTip("请先安装 'openpyxl' (pip install openpyxl) 以启用此功能")
-        
-        btns.addWidget(self.download_btn)
-        btns.addWidget(self.open_folder_btn)
 
-        # 搜索框
-        search_layout = QtWidgets.QHBoxLayout()
-        lay.addLayout(search_layout)
+        # 第三行：搜索 + 类型筛选
+        row3 = QtWidgets.QHBoxLayout()
+        row3.setSpacing(8)
         self.search_edit = QtWidgets.QLineEdit()
         self.search_edit.setPlaceholderText('搜索作品标题或作者...')
         self.search_edit.setClearButtonEnabled(True)
-        self.search_edit.setMaximumWidth(300)
-        search_layout.addWidget(self.search_edit)
-        search_layout.addStretch()
+        self.search_edit.setFixedWidth(280)
+        row3.addWidget(self.search_edit)
+        row3.addStretch()
+        self.type_filter_btn = QtWidgets.QPushButton('类型 ▼')
+        self.type_filter_btn.setObjectName('type_filter_btn')
+        row3.addWidget(self.type_filter_btn)
+        lay.addLayout(row3)
 
         self.tree = QtWidgets.QTreeWidget()
         self.tree.setStyle(NoFocusRectStyle())
@@ -177,29 +201,6 @@ class MainWindow(QtWidgets.QMainWindow):
         self.type_filter_menu = QtWidgets.QMenu(self)
         self.type_filter_menu.setWindowFlags(Qt.WindowType.Popup | Qt.WindowType.FramelessWindowHint | Qt.WindowType.NoDropShadowWindowHint)
         self.type_filter_menu.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
-        self.type_filter_menu.setStyleSheet("""
-            QMenu {
-                border: 1px solid #dcdfe6;
-                background-color: #ffffff;
-                border-radius: 0px;
-            }
-            QCheckBox {
-                spacing: 5px;
-                padding: 4px;
-            }
-            QCheckBox::indicator {
-                width: 16px;
-                height: 16px;
-                border: 1px solid #c0c4cc;
-                border-radius: 0px;
-                background: #ffffff;
-            }
-            QCheckBox::indicator:checked {
-                background-color: #409EFF;
-                border: 1px solid #409EFF;
-                image: url(""" + self.checkmark_svg_path + """);
-            }
-        """)
         filter_widget = QtWidgets.QWidget()
         filter_layout = QtWidgets.QVBoxLayout(filter_widget)
         filter_layout.setContentsMargins(5, 5, 5, 5)
@@ -271,30 +272,16 @@ class MainWindow(QtWidgets.QMainWindow):
         self.tree.setAttribute(QtCore.Qt.WidgetAttribute.WA_MacShowFocusRect, False)
         self.tree.setFrameShape(QtWidgets.QFrame.Shape.Box)
         self.tree.setAlternatingRowColors(True)
-        self.tree.setStyleSheet(
-            "QTreeWidget { background: #ffffff; border: 1px solid #e6eef8; show-decoration-selected: 0; }"
-            "QTreeWidget::item { padding:6px 4px; color: #222222; outline: 0; }"
-            "QTreeWidget::item:focus { outline: 0; border: 0; }"
-            "QTreeWidget::item:selected { background: #e6f2ff; color: #000000; outline: 0; }"
-            "QTreeWidget::item:selected:active { background: #e6f2ff; outline: 0; }"
-            "QTreeWidget::item:selected:!active { background: #e6f2ff; outline: 0; }"
-        )
         lay.addWidget(self.tree)
 
+        # 底部进度与状态
         bottom = QtWidgets.QHBoxLayout()
-        lay.addLayout(bottom)
+        bottom.setSpacing(12)
         self.progress = QtWidgets.QProgressBar()
-        self.progress.setFixedHeight(26)
-        self.progress.setTextVisible(True)
-        self.progress.setStyleSheet(
-            "QProgressBar { border: none; border-radius: 0px; background: #f0f0f0; text-align: center; }"
-            "QProgressBar::chunk { background-color: #5aa6ff; border-radius: 0px; }"
-        )
-        bottom.addWidget(self.progress)
+        self.progress.setFixedHeight(10)
+        self.progress.setTextVisible(False)
+        bottom.addWidget(self.progress, 1)
         self.progress.hide()
-
-        status_layout = QtWidgets.QHBoxLayout()
-        lay.addLayout(status_layout)
         self.status = QtWidgets.QLabel('')
         # 长文本（如下载失败的 URL）自动换行，避免撑大窗口宽度
         self.status.setWordWrap(True)
@@ -302,14 +289,14 @@ class MainWindow(QtWidgets.QMainWindow):
         self.status.setSizePolicy(QtWidgets.QSizePolicy.Policy.Preferred, QtWidgets.QSizePolicy.Policy.Minimum)
         self.status.setCursor(QtGui.QCursor(Qt.CursorShape.PointingHandCursor))
         self.status.setMouseTracking(True)
-        status_layout.addWidget(self.status)
-        status_layout.addStretch()
-        status_layout.addWidget(QtWidgets.QLabel('当前用户:'))
+        bottom.addWidget(self.status)
+        bottom.addWidget(QtWidgets.QLabel('当前用户:'))
         self.nickname_label = QtWidgets.QLabel('')
-        font = self.nickname_label.font()
-        font.setBold(True)
-        self.nickname_label.setFont(font)
-        status_layout.addWidget(self.nickname_label)
+        nickname_font = self.nickname_label.font()
+        nickname_font.setBold(True)
+        self.nickname_label.setFont(nickname_font)
+        bottom.addWidget(self.nickname_label)
+        lay.addLayout(bottom)
 
         self.vtasks_all = []
         self.itasks_all = []
@@ -328,6 +315,9 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.page_stack.addWidget(works_page)
         self.page_stack.addWidget(self.user_list_window)
+        # 占位页面，防止“下载记录”导航项导致索引越界
+        self._history_placeholder = QtWidgets.QWidget()
+        self.page_stack.addWidget(self._history_placeholder)
         self.nav_list.currentRowChanged.connect(self.on_nav_changed)
 
         self.worker = Worker()
@@ -337,29 +327,14 @@ class MainWindow(QtWidgets.QMainWindow):
         self._monitor_pending_updates = []  # [{sec, new_awemes}, ...]
         self._monitor_timer = QtCore.QTimer(self)
         self._monitor_timer.timeout.connect(self.on_monitor_tick)
-        btn_font = QtGui.QFont()
-        btn_font.setPointSize(11)
-        self.like_checkbox.setFont(btn_font)
-        self.latest_only_checkbox.setFont(btn_font)
-        for b in (self.fetch_btn, self.download_btn, self.settings_btn, self.clear_btn, self.select_all_btn, self.invert_btn, self.export_urls_btn):
-            b.setFont(btn_font)
-        button_width = 100
-        self.fetch_btn.setFixedWidth(button_width)
-        self.download_btn.setFixedWidth(button_width)
-
-        self.clear_btn.setStyleSheet('''
-            QPushButton {
-                background: #d9534f; color: white; padding: 7px 14px;
-                border: none; font-weight: 500; font-size: 13px;                 
-            }
-            QPushButton:hover { background: #fa8480; }
-            QPushButton:disabled { background: #f0b3b3; color: #f8e6e6; }
-        ''')
 
         self.url_label_btn.clicked.connect(self.on_show_user_list)
         self.fetch_btn.clicked.connect(self.on_fetch)
         self.download_btn.clicked.connect(self.on_download)
         self.settings_btn.clicked.connect(self.on_settings)
+        self.settings_btn_top.clicked.connect(self.on_settings)
+        self.view_log_btn.clicked.connect(lambda: (self.log_window.show(), self.log_window.raise_(), self.log_window.activateWindow()))
+        self.type_filter_btn.clicked.connect(self.on_type_filter_btn_clicked)
         self.latest_only_checkbox.stateChanged.connect(self.on_latest_only_changed)
         self.select_all_btn.clicked.connect(self.on_select_all)
         self.export_excel_btn.clicked.connect(self.on_export_excel)
@@ -478,6 +453,10 @@ class MainWindow(QtWidgets.QMainWindow):
         header = self.tree.header()
         if header:
             header.setSortIndicator(self._sort_column, self._sort_order)
+
+    def on_type_filter_btn_clicked(self):
+        """类型筛选按钮点击时弹出筛选菜单"""
+        self.type_filter_menu.popup(self.type_filter_btn.mapToGlobal(QtCore.QPoint(0, self.type_filter_btn.height())))
 
     @staticmethod
     def _resolution_sort_key(text):
@@ -725,21 +704,7 @@ class MainWindow(QtWidgets.QMainWindow):
         pct = int((done / max(1, total)) * 100)
         self.progress.setFormat(f"%v / %m ({pct}%)")
         
-        # 完成时变绿
-        try:
-            if total > 0 and done >= total:
-                self.progress.setStyleSheet(
-                    "QProgressBar { border: none; border-radius: 0px; background: #f0f0f0; text-align: center; }"
-                    "QProgressBar::chunk { background-color: #4CC14C; border-radius: 0px; }"
-                )
-            else:
-                # 恢复进行中颜色（蓝色）
-                self.progress.setStyleSheet(
-                    "QProgressBar { border: none; border-radius: 0px; background: #f0f0f0; text-align: center; }"
-                    "QProgressBar::chunk { background-color: #5aa6ff; border-radius: 0px; }"
-                )
-        except Exception:
-            pass
+
     
     def on_download_finished(self):
         """下载完成处理（确保进度条是绿色，并更新下载状态列）"""
@@ -754,10 +719,6 @@ class MainWindow(QtWidgets.QMainWindow):
                 self.progress.hide()
             else:
                 self.progress.setFormat(f"%v / %m (完成)")
-            self.progress.setStyleSheet(
-                "QProgressBar { border: none; border-radius: 0px; background: #f0f0f0; text-align: center; }"
-                "QProgressBar::chunk { background-color: #4CC14C; border-radius: 0px; }"
-            )
 
             # 按作品统计成功/失败文件数，避免「停止」后未完成项被标成已下载
             success_counts = Counter()
@@ -1589,22 +1550,44 @@ class MainWindow(QtWidgets.QMainWindow):
         base_folder = cfg.get('path', '') or os.getcwd()
         download_folder = os.path.join(base_folder, '作品下载')
 
+        # 图集扁平镜像（以博主为父级，无需单独路径）：启用后图集在原有结构
+        # （作品下载/{博主}/图集/{标题}/）之外，额外复制一份到扁平目录
+        # （作品下载/{博主}/图片/，不建逐个图集子目录）——两个并存
+        flat_image_enabled = bool(cfg.get('flat_image_enabled', False))
+        download_live_cover = bool(cfg.get('download_live_cover', False))
+
         user_folders = set()
         for work in selected:
             # 标记下载状态
             self._download_status[work['aweme_id']] = '下载中'
             self._downloading_ids.add(work['aweme_id'])
             n_tasks = len(work.get('video_tasks', [])) + len(work.get('image_tasks', []))
+            if download_live_cover:
+                n_tasks += len(work.get('cover_tasks', []))
             self._download_task_counts[work['aweme_id']] = n_tasks
-            # 每个作者一个文件夹，注入到该作品的所有任务中
-            folder = self.author_folder_for_work(work, download_folder)
-            user_folders.add(folder)
+            # 每个作者一个文件夹：视频/图集主结构均在「作品下载」下
+            author_folder = self.author_folder_for_work(work, download_folder)
+            user_folders.add(author_folder)
+            # 扁平镜像目录：与博主文件夹同级同路径（作品下载/{博主}/图片/）
+            flat_mirror_folder = author_folder if flat_image_enabled else None
             for t in work.get('video_tasks', []):
-                t['base_folder'] = folder
+                t['base_folder'] = author_folder
             sel_v.extend(work.get('video_tasks', []))
             for t in work.get('image_tasks', []):
-                t['base_folder'] = folder
+                t['base_folder'] = author_folder
+                if flat_mirror_folder:
+                    t['flat_mirror_folder'] = flat_mirror_folder
+                else:
+                    t.pop('flat_mirror_folder', None)
             sel_i.extend(work.get('image_tasks', []))
+            if download_live_cover:
+                for t in work.get('cover_tasks', []):
+                    t['base_folder'] = author_folder
+                    if flat_mirror_folder:
+                        t['flat_mirror_folder'] = flat_mirror_folder
+                    else:
+                        t.pop('flat_mirror_folder', None)
+                sel_i.extend(work.get('cover_tasks', []))
 
         # 同步更新可见的「下载状态」列
         for i in range(self.tree.topLevelItemCount()):
@@ -2122,6 +2105,8 @@ class MainWindow(QtWidgets.QMainWindow):
 
         use_mix_folder = cfg.get('use_mix_folder', True)
         include_date = cfg.get('include_date_in_filename', True)
+        flat_image_enabled = bool(cfg.get('flat_image_enabled', False))
+        download_live_cover = bool(cfg.get('download_live_cover', False))
 
         for r in pending_results:
             awemes = r.get('new_awemes') or []
@@ -2135,11 +2120,15 @@ class MainWindow(QtWidgets.QMainWindow):
             for work in works:
                 folder = self.author_folder_for_work(work, download_folder)
                 user_folders.add(folder)
+                # 扁平镜像目录：与博主文件夹同路径（作品下载/{博主}/图片/）
+                flat_mirror_folder = folder if flat_image_enabled else None
                 aid = work.get('aweme_id', '')
                 if aid:
                     self._download_status[aid] = '下载中'
                     self._downloading_ids.add(aid)
                     n_tasks = len(work.get('video_tasks', [])) + len(work.get('image_tasks', []))
+                    if download_live_cover:
+                        n_tasks += len(work.get('cover_tasks', []))
                     self._download_task_counts[aid] = n_tasks
                 for t in work.get('video_tasks', []):
                     nt = dict(t)
@@ -2151,10 +2140,22 @@ class MainWindow(QtWidgets.QMainWindow):
                 for t in work.get('image_tasks', []):
                     nt = dict(t)
                     nt['base_folder'] = folder
+                    if flat_mirror_folder:
+                        nt['flat_mirror_folder'] = flat_mirror_folder
                     if not use_mix_folder:
                         nt['mix_name'] = None
                     nt['include_date_in_filename'] = include_date
                     sel_i.append(nt)
+                if download_live_cover:
+                    for t in work.get('cover_tasks', []):
+                        nt = dict(t)
+                        nt['base_folder'] = folder
+                        if flat_mirror_folder:
+                            nt['flat_mirror_folder'] = flat_mirror_folder
+                        if not use_mix_folder:
+                            nt['mix_name'] = None
+                        nt['include_date_in_filename'] = include_date
+                        sel_i.append(nt)
 
         if not sel_v and not sel_i:
             self.append_log('[监控] 新作品无可下载媒体，跳过')

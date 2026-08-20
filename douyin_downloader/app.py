@@ -66,117 +66,345 @@ def run_gui():
         print(f"Warning: Failed to create temp checkmark svg: {e}")
 
     try:
-        app.setStyleSheet("""
+        app.setStyleSheet(f"""
+        /* Apple/Pinguo design system global stylesheet */
+        QWidget {{
+            background-color: #FFFFFF;
+            color: #1D1D1F;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            font-size: 13px;
+        }}
+        QMainWindow, QDialog {{
+            background-color: #FFFFFF;
+        }}
+        QLabel {{
+            color: #1D1D1F;
+        }}
+
+        QWidget#works_page {{
+            background-color: #F2F2F7;
+        }}
+        QFrame#settings_card {{
+            background-color: #FFFFFF;
+            border: 1px solid #E5E5EA;
+            border-radius: 12px;
+        }}
+        QLabel#section_title {{
+            color: #6E6E73;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+        }}
+        QPushButton#type_filter_btn {{
+            background-color: #FFFFFF;
+            color: #1D1D1F;
+            border: 1px solid #E5E5EA;
+            border-radius: 9999px;
+            padding: 4px 12px;
+        }}
+        QPushButton#type_filter_btn:hover {{
+            background-color: #F2F2F7;
+        }}
+        QPushButton#icon_btn {{
+            background-color: transparent;
+            color: #1D1D1F;
+            border: none;
+            border-radius: 9999px;
+            padding: 4px;
+        }}
+        QPushButton#icon_btn:hover {{
+            background-color: #E5E5EA;
+        }}
+
         /* ---------------- 按钮 ---------------- */
-        QPushButton {
-            background-color: #409EFF; border: 1px solid #409EFF; color: white;
-            padding: 6px 14px; border-radius: 0px; font-weight: 500; font-size: 13px;
-        }
-        QPushButton:hover { background-color: #66b1ff; border: 1px solid #66b1ff; }
-        QPushButton:pressed { background-color: #3a8ee6; border: 1px solid #3a8ee6; }
-        QPushButton:disabled {
-            background-color: #a0cfff; border: 1px solid #a0cfff; color: #f0f0f0;
-        }
+        QPushButton {{
+            background-color: #F2F2F7;
+            color: #1D1D1F;
+            border: none;
+            padding: 6px 14px;
+            border-radius: 9999px;
+            font-weight: 500;
+            font-size: 13px;
+            outline: none;
+        }}
+        QPushButton:hover {{
+            background-color: #E5E5EA;
+        }}
+        QPushButton:pressed {{
+            background-color: #D1D1D6;
+        }}
+        QPushButton:disabled {{
+            background-color: #F2F2F7;
+            color: #AEAEB2;
+        }}
+        QPushButton:checked {{
+            background-color: #E5E5EA;
+        }}
+
+        /* Primary buttons */
+        QPushButton#fetch_btn, QPushButton#download_btn, QPushButton#save_settings_btn {{
+            background-color: #007AFF;
+            color: #FFFFFF;
+        }}
+        QPushButton#fetch_btn:hover, QPushButton#download_btn:hover, QPushButton#save_settings_btn:hover {{
+            background-color: #0064D6;
+        }}
+        QPushButton#fetch_btn:pressed, QPushButton#download_btn:pressed, QPushButton#save_settings_btn:pressed {{
+            background-color: #004FAD;
+        }}
+        QPushButton#fetch_btn:disabled, QPushButton#download_btn:disabled, QPushButton#save_settings_btn:disabled {{
+            background-color: #9FCBFF;
+            color: #FFFFFF;
+        }}
+
+        /* clear_btn now uses the default secondary style to match the HTML prototype */
+        /*
+        QPushButton#clear_btn {{
+            background-color: #FF3B30;
+            color: #FFFFFF;
+        }}
+        QPushButton#clear_btn:hover {{
+            background-color: #D32F2F;
+        }}
+        QPushButton#clear_btn:pressed {{
+            background-color: #B71C1C;
+        }}
+        QPushButton#clear_btn:disabled {{
+            background-color: #FFCCC9;
+            color: #FFFFFF;
+        }}
+        */
 
         /* "停止"按钮的红色样式（通过 running="true" 属性激活） */
-        QPushButton[running="true"] {
-            background: #d9534f; color: white; padding: 7px 14px;
-            border: 1px solid #d9534f; font-weight: 500; font-size: 13px;
-        }
-        QPushButton[running="true"]:hover {
-            background: #fa8480; border: 1px solid #fa8480;
-        }
-        QPushButton[running="true"]:pressed {
-            background: #d9534f; border: 1px solid #d9534f;
-        }
-        QPushButton[running="true"]:disabled {
-            background: #f0b3b3; color: #f8e6e6; border: 1px solid #f0b3b3;
-        }
+        QPushButton[running="true"] {{
+            background-color: #FF3B30;
+            color: #FFFFFF;
+            padding: 6px 14px;
+            border: none;
+            border-radius: 9999px;
+            font-weight: 500;
+            font-size: 13px;
+        }}
+        QPushButton[running="true"]:hover {{
+            background-color: #D32F2F;
+        }}
+        QPushButton[running="true"]:pressed {{
+            background-color: #B71C1C;
+        }}
+        QPushButton[running="true"]:disabled {{
+            background-color: #FFCCC9;
+            color: #FFFFFF;
+        }}
 
+        /* URL label button */
+        QPushButton#url_label_btn {{
+            background-color: transparent;
+            color: #1D1D1F;
+            padding: 0px;
+            font-weight: 600;
+        }}
+        QPushButton#url_label_btn:hover {{
+            color: #007AFF;
+        }}
 
         /* ---------------- 输入框 ---------------- */
-        QLineEdit, QTextEdit, QSpinBox {
-            border: 1px solid #dcdfe6; background: #ffffff; color: #303133;
-            padding: 6px; border-radius: 0px; font-size: 13px;
-        }
-        QLineEdit:focus, QTextEdit:focus, QSpinBox:focus {
-            border: 1px solid #409EFF; background: #f9fcff;
-        }
+        QLineEdit, QTextEdit, QSpinBox {{
+            border: 1px solid #E5E5EA;
+            background-color: #FFFFFF;
+            color: #1D1D1F;
+            padding: 6px;
+            border-radius: 8px;
+            font-size: 13px;
+        }}
+        QLineEdit:focus, QTextEdit:focus, QSpinBox:focus {{
+            border: 2px solid #007AFF;
+        }}
+        QLineEdit:disabled, QTextEdit:disabled, QSpinBox:disabled {{
+            background-color: #F2F2F7;
+            color: #8E8E93;
+        }}
 
         /* ---------------- 复选框 ---------------- */
-        QCheckBox {
-            spacing: 8px; font-size: 13px; color: #303133;
-        }
-        QCheckBox::indicator {
-            width: 18px; height: 18px; border: 1px solid #dcdfe6;
-            border-radius: 3px; background: #ffffff;
-        }
-        QCheckBox::indicator:hover {
-            border: 1px solid #409EFF;
-        }
-        QCheckBox::indicator:checked {
-            background-color: #409EFF; border: 1px solid #409EFF;
-            image: url(""" + checkmark_path + r""");
-        }
-        QCheckBox::indicator:checked:hover {
-            background-color: #66b1ff; border: 1px solid #66b1ff;
-        }
+        QCheckBox {{
+            spacing: 8px;
+            font-size: 13px;
+            color: #1D1D1F;
+        }}
+        QCheckBox::indicator {{
+            width: 18px;
+            height: 18px;
+            border: 1px solid #E5E5EA;
+            border-radius: 5px;
+            background-color: #FFFFFF;
+        }}
+        QCheckBox::indicator:hover {{
+            border: 1px solid #007AFF;
+        }}
+        QCheckBox::indicator:checked {{
+            background-color: #007AFF;
+            border: 1px solid #007AFF;
+            image: url("{checkmark_path}");
+        }}
+        QCheckBox::indicator:checked:hover {{
+            background-color: #0064D6;
+            border: 1px solid #0064D6;
+        }}
 
         /* ---------------- 列表复选框 (QTreeWidget) ---------------- */
-        QTreeView::indicator, QTreeWidget::indicator {
-            width: 16px; height: 16px; border: 1px solid #c0c4cc;
-            border-radius: 2px; background: #ffffff;
-        }
-        QTreeView::indicator:hover, QTreeWidget::indicator:hover {
-            border: 1px solid #409EFF;
-        }
-        QTreeView::indicator:checked, QTreeWidget::indicator:checked {
-            background-color: #409EFF; border: 1px solid #409EFF;
-            image: url(""" + checkmark_path + r""");
-        }
+        QTreeView::indicator, QTreeWidget::indicator {{
+            width: 16px;
+            height: 16px;
+            border: 1px solid #E5E5EA;
+            border-radius: 4px;
+            background-color: #FFFFFF;
+        }}
+        QTreeView::indicator:hover, QTreeWidget::indicator:hover {{
+            border: 1px solid #007AFF;
+        }}
+        QTreeView::indicator:checked, QTreeWidget::indicator:checked {{
+            background-color: #007AFF;
+            border: 1px solid #007AFF;
+            image: url("{checkmark_path}");
+        }}
 
         /* ---------------- 列表 QTreeWidget ---------------- */
-        QTreeWidget {
-            background: #ffffff; border: 1px solid #e4e7ed;
-            alternate-background-color: #fafbfc; gridline-color: #f2f6fc;
-            selection-background-color: #d9eaff; font-size: 13px;
-        }
-        QTreeWidget::item { padding: 6px 4px; color: #222222; }
-        QTreeWidget::item:hover { background: #f3f8fe; }
-        QTreeWidget::item:selected { background: #cfe4ff; color: #000000; }
+        QTreeWidget {{
+            background-color: #FFFFFF;
+            border: 1px solid #E5E5EA;
+            border-radius: 8px;
+            outline: none;
+            font-size: 13px;
+            alternate-background-color: #F2F2F7;
+        }}
+        QTreeWidget::item {{
+            padding: 6px 4px;
+            color: #1D1D1F;
+            border: none;
+            outline: none;
+        }}
+        QTreeWidget::item:hover {{
+            background-color: #F2F2F7;
+        }}
+        QTreeWidget::item:selected,
+        QTreeWidget::item:selected:active,
+        QTreeWidget::item:selected:!active {{
+            background-color: #E5E5EA;
+            color: #1D1D1F;
+        }}
+        QHeaderView::section {{
+            background-color: #FFFFFF;
+            color: #6E6E73;
+            padding: 6px 4px;
+            border: none;
+            border-bottom: 1px solid #E5E5EA;
+            font-weight: 600;
+            font-size: 12px;
+        }}
+
+        /* ---------------- 侧边栏 QListWidget ---------------- */
+        QListWidget {{
+            background-color: #F2F2F7;
+            border: none;
+            border-right: 1px solid #E5E5EA;
+            outline: none;
+            font-size: 13px;
+            padding: 8px 6px;
+        }}
+        QListWidget::item {{
+            padding: 8px 12px;
+            color: #1D1D1F;
+            border-radius: 8px;
+        }}
+        QListWidget::item:hover {{
+            background-color: #E5E5EA;
+        }}
+        QListWidget::item:selected {{
+            background-color: #007AFF;
+            color: #FFFFFF;
+        }}
 
         /* ---------------- 进度条 ---------------- */
-        QProgressBar {
-            border: 1px solid #dcdfe6; background: #f5f7fa; height: 22px;
-            border-radius: 0px; text-align: center; font-size: 12px; color: #303133;
-        }
-        QProgressBar::chunk {
-            background-color: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-                stop:0 #66b1ff, stop:1 #409EFF);
-            border-radius: 0px;
-        }
+        QProgressBar {{
+            border: none;
+            background-color: #F2F2F7;
+            height: 8px;
+            border-radius: 9999px;
+            text-align: center;
+            font-size: 12px;
+            color: #6E6E73;
+        }}
+        QProgressBar::chunk {{
+            background-color: #007AFF;
+            border-radius: 9999px;
+        }}
 
         /* ---------------- 滚动条 ---------------- */
-        QScrollBar:vertical {
-            border: none; background: #f5f7fa; width: 10px; margin: 0px;
-        }
-        QScrollBar::handle:vertical {
-            background: #c0c4cc; border-radius: 0px; min-height: 20px;
-        }
-        QScrollBar::handle:vertical:hover { background: #a6a9ad; }
-        QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
-            height: 0px; background: none;
-        }
-        QScrollBar:horizontal {
-            border: none; background: #f5f7fa; height: 10px; margin: 0px;
-        }
-        QScrollBar::handle:horizontal {
-            background: #c0c4cc; border-radius: 0px; min-width: 20px;
-        }
-        QScrollBar::handle:horizontal:hover { background: #a6a9ad; }
-        QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
-            width: 0px; background: none;
-        }
+        QScrollBar:vertical {{
+            border: none;
+            background-color: transparent;
+            width: 10px;
+            margin: 0px;
+        }}
+        QScrollBar::handle:vertical {{
+            background-color: #C7C7CC;
+            border-radius: 5px;
+            min-height: 20px;
+        }}
+        QScrollBar::handle:vertical:hover {{
+            background-color: #AEAEB2;
+        }}
+        QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
+            height: 0px;
+            background: none;
+        }}
+        QScrollBar:horizontal {{
+            border: none;
+            background-color: transparent;
+            height: 10px;
+            margin: 0px;
+        }}
+        QScrollBar::handle:horizontal {{
+            background-color: #C7C7CC;
+            border-radius: 5px;
+            min-width: 20px;
+        }}
+        QScrollBar::handle:horizontal:hover {{
+            background-color: #AEAEB2;
+        }}
+        QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {{
+            width: 0px;
+            background: none;
+        }}
+
+        /* ---------------- 菜单 ---------------- */
+        QMenu {{
+            background-color: #FFFFFF;
+            border: 1px solid #E5E5EA;
+            border-radius: 8px;
+            padding: 6px;
+        }}
+        QMenu::item {{
+            padding: 6px 12px;
+            border-radius: 6px;
+        }}
+        QMenu::item:selected {{
+            background-color: #F2F2F7;
+            color: #1D1D1F;
+        }}
+
+        /* ---------------- 图标预览按钮 ---------------- */
+        IconPreviewButton {{
+            background-color: #FFFFFF;
+            border: 1px solid #E5E5EA;
+            border-radius: 8px;
+        }}
+        IconPreviewButton:hover {{
+            border: 1px solid #007AFF;
+        }}
+        IconPreviewButton:checked {{
+            background-color: #E8F2FF;
+            border: 2px solid #007AFF;
+        }}
         """)
     except Exception as e:
         print(f"Warning: Failed to set stylesheet: {e}")

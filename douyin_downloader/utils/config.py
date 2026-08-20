@@ -82,6 +82,12 @@ def load_config():
                 cfg['set_file_time_to_publish_time'] = _safe_get(
                     cp, 'main', 'set_file_time_to_publish_time', 'getboolean', False
                 )
+                cfg['download_live_cover'] = _safe_get(
+                    cp, 'main', 'download_live_cover', 'getboolean', False
+                )
+                cfg['flat_image_enabled'] = _safe_get(
+                    cp, 'main', 'flat_image_enabled', 'getboolean', False
+                )
                 cfg['threads'] = _safe_get(cp, 'main', 'threads', 'getint', DEFAULT_THREAD_COUNT)
                 cfg['icon_choice'] = _safe_get(cp, 'main', 'icon_choice', default='default')
                 cfg['monitor_enabled'] = _safe_get(cp, 'main', 'monitor_enabled', 'getboolean', False)
@@ -150,6 +156,8 @@ def load_config():
     cfg.setdefault('fetch_latest_only', False)
     cfg.setdefault('add_title_when_export_urls', False)
     cfg.setdefault('set_file_time_to_publish_time', False)
+    cfg.setdefault('download_live_cover', False)
+    cfg.setdefault('flat_image_enabled', False)
     cfg.setdefault('threads', DEFAULT_THREAD_COUNT)
     cfg.setdefault('icon_choice', 'default')
     cfg.setdefault('monitor_enabled', False)
@@ -202,6 +210,8 @@ def save_config(cfg):
             'fetch_latest_only': str(bool(merged.get('fetch_latest_only', False))),
             'add_title_when_export_urls': str(bool(merged.get('add_title_when_export_urls', False))),
             'set_file_time_to_publish_time': str(bool(merged.get('set_file_time_to_publish_time', False))),
+            'download_live_cover': str(bool(merged.get('download_live_cover', False))),
+            'flat_image_enabled': str(bool(merged.get('flat_image_enabled', False))),
             'threads': str(int(merged.get('threads', DEFAULT_THREAD_COUNT))),
             'icon_choice': merged.get('icon_choice', 'default'),
             'chrome_path': merged.get('chrome_path', ''),

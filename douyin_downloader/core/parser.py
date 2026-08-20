@@ -16,10 +16,11 @@ def extract_media_links_from_aweme(aweme):
       - 如果 image 项包含 'video' 字段 -> 视为实况图（只提取实况图视频 .mp4）
       - 否则 -> 视为普通图片（提取最高分辨率 url_list[-1] .jpg/.png）
       
-    返回： desc, videos[], images[], live_images[], date_str, mix_name, create_time
+    返回： desc, videos[], images[], live_images[], live_covers[], date_str, mix_name, create_time
       create_time 为原始 Unix 时间戳（整数），用于设置文件修改时间。
+      live_covers 为实况图项对应的静态封面图 URL 列表（与 live_images 一一对应）。
     """
-    videos, images, live_images = [], [], []
+    videos, images, live_images, live_covers = [], [], [], []
     aweme_id = aweme.get('aweme_id') or ''
     desc = aweme.get('desc', '') or aweme_id or 'no_desc'
     
@@ -75,6 +76,12 @@ def extract_media_links_from_aweme(aweme):
                         vurl_list = best.get('play_addr', {}).get('url_list', [])
                         if vurl_list:
                             live_images.append(vurl_list[0])
+                    # 同时提取该实况图项的静态封面图 URL（与 live_images 一一对应）
+                    cover_urls = img.get('url_list', [])
+                    if cover_urls and isinstance(cover_urls, list) and cover_urls:
+                        live_covers.append(cover_urls[-1])
+                    else:
+                        live_covers.append('')  # 保持索引对齐
                     # 互斥：提取了实况图，就跳过该项的普通图片提取
                     continue
                 except Exception:
@@ -86,7 +93,7 @@ def extract_media_links_from_aweme(aweme):
                 # 默认最后一个是最高分辨率
                 images.append(url_list[-1])
 
-    return desc, videos, images, live_images, date_str, mix_name, create_time
+    return desc, videos, images, live_images, live_covers, date_str, mix_name, create_time
 
 
 def parse_awemes_to_works(all_awemes):
@@ -103,7 +110,7 @@ def parse_awemes_to_works(all_awemes):
     """
     works = []
     for aweme in all_awemes:
-        desc, videos, images, live_images, date_str, mix_name, create_time = extract_media_links_from_aweme(aweme)
+        desc, videos, images, live_images, live_covers, date_str, mix_name, create_time = extract_media_links_from_aweme(aweme)
 
         # ---- 聚合元信息 ----
         author_nickname = ''
@@ -168,6 +175,20 @@ def parse_awemes_to_works(all_awemes):
                 'url_hash': hashlib.md5(lvurl.encode('utf-8')).hexdigest()[:8],
             })
 
+        # 实况图封面任务（始终构建，由调用方根据 download_live_cover 决定是否纳入下载）
+        cover_tasks = []
+        for idx, curl in enumerate(live_covers, start=1):
+            if not curl:
+                continue  # 无封面 URL 的实况图项
+            ext = get_extension_from_url(curl, '.jpg')
+            cover_tasks.append({
+                'url': curl, 'desc': f"{desc}_livecover{idx}", 'ext': ext,
+                'date': date_str, 'mix_name': mix_name,
+                'aweme_id': aweme.get('aweme_id', ''),
+                'create_time': create_time,
+                'url_hash': hashlib.md5(curl.encode('utf-8')).hexdigest()[:8],
+            })
+
         # ---- 判断作品类型 ----
         has_video = len(videos) > 0
         has_image = len(images) > 0
@@ -199,6 +220,7 @@ def parse_awemes_to_works(all_awemes):
             'author_nickname': author_nickname,
             'video_tasks': video_tasks,
             'image_tasks': image_tasks,
+            'cover_tasks': cover_tasks,
             'create_time': create_time,
         })
 
@@ -213,7 +235,7 @@ def parse_all_awemes_to_tasks(all_awemes):
     live_count = 0
 
     for aweme in all_awemes:
-        desc, videos, images, live_images, date_str, mix_name, create_time = extract_media_links_from_aweme(aweme)
+        desc, videos, images, live_images, live_covers, date_str, mix_name, create_time = extract_media_links_from_aweme(aweme)
 
         # 视频任务
         for vurl in videos:

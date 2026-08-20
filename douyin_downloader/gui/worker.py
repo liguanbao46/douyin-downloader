@@ -21,7 +21,8 @@ from douyin_downloader.constants import (
     TEXT_INFO_FETCH_PAGE, PAGE_COUNT_PER_REQUEST, MAX_RETRY_DELAY, USER_AGENT
 )
 from douyin_downloader.utils.file_utils import (
-    build_expected_filename, update_author_folders_mtime
+    build_expected_filename, update_author_folders_mtime,
+    compute_flat_mirror_path, mirror_file_to_flat,
 )
 from urllib.parse import quote, urlencode
 from douyin_downloader.core.api import (
@@ -377,6 +378,14 @@ class Worker(QtCore.QObject):
 
                 fullpath = os.path.join(t.get('base_folder', base_folder), expected)
                 if os.path.exists(fullpath):
+                    # 原有结构已存在 → 检查扁平镜像是否需要补齐
+                    mirror_base = t.get('flat_mirror_folder')
+                    if mirror_base:
+                        mp = compute_flat_mirror_path(t, mirror_base)
+                        if not os.path.exists(mp):
+                            dst, copied = mirror_file_to_flat(fullpath, t, mirror_base)
+                            if copied and dst:
+                                self.log_signal.emit(f"[镜像] 已复制到扁平目录: {os.path.basename(dst)}")
                     self.log_signal.emit(f"[跳过] 已存在: {expected}")
                     results_success_files.add(expected)
                     rec = {'task': t, 'is_image': True, 'path': expected}

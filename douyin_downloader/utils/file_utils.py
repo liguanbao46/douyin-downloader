@@ -5,6 +5,7 @@
 """
 import os
 import re
+import shutil
 import time
 import hashlib
 from datetime import datetime
@@ -144,28 +145,38 @@ def generate_unique_filename(base, ext, folder, url, url_hash=None):
 
 def _extract_image_parts(desc):
     """从图片任务 desc 中提取 base_desc 和序号。
-    desc 格式: 'some_title_p3' → ('some_title', '3', False)
-                'some_title_live2' → ('some_title', '2', True)
-    无法匹配时返回 (desc, '', False)
+    desc 格式: 'some_title_p3'       → ('some_title', '3', 'normal')
+                'some_title_live2'    → ('some_title', '2', 'live')
+                'some_title_livecover2'→ ('some_title', '2', 'cover')
+    无法匹配时返回 (desc, '', 'normal')
     """
     m = re.match(r'^(.+?)_p(\d+)$', desc)
     if m:
-        return m.group(1), m.group(2), False
+        return m.group(1), m.group(2), 'normal'
+    m = re.match(r'^(.+?)_livecover(\d+)$', desc)
+    if m:
+        return m.group(1), m.group(2), 'cover'
     m = re.match(r'^(.+?)_live(\d+)$', desc)
     if m:
-        return m.group(1), m.group(2), True
-    return desc, '', False
+        return m.group(1), m.group(2), 'live'
+    return desc, '', 'normal'
 
 
 def compute_download_folder(base_folder, mix_name=None, is_image=False,
-                            base_desc=None, date_str='', include_date=True):
+                            base_desc=None, date_str='', include_date=True,
+                            flat_mode=False):
     """
     计算下载目录。
     - 视频: base_folder/[合集/]视频/
-    - 图集: base_folder/[合集/]图集/{date}_{base_desc}/
+    - 图集（正常）: base_folder/[合集/]图集/{date}_{base_desc}/
+    - 图集（扁平）: base_folder/图片/  （所有图片集中一个目录，不建逐个图集子目录）
     worker 预检和 downloader 实际下载共用此函数，确保路径一致。
     """
     folder = base_folder
+    if flat_mode and is_image:
+        # 扁平模式：博主文件夹下建一个「图片」子目录，所有图片集中存放
+        # （命名为「图片」以区别于原有「图集」结构）
+        return os.path.join(folder, '图片')
     if mix_name:
         mix_clean = sanitize_filename(mix_name, max_length=100)
         folder = os.path.join(folder, mix_clean)
@@ -189,22 +200,75 @@ def compute_base_filename(desc, date_str='', include_date=True):
     return desc
 
 
-def build_expected_filename(desc, ext, is_image, mix_name=None, date_str='', include_date=True):
+def build_expected_filename(desc, ext, is_image, mix_name=None, date_str='', include_date=True,
+                            flat_mode=False):
     """
     构建预期的文件相对路径（用于去重检查）。
     与 download_single_file 共用 compute_download_folder / compute_base_filename，
     保证预检路径与实际下载路径一致（不含 hash/重名后缀）。
-    图片文件名简化为序号: '3.jpg', 'live2.mp4'
+
+    正常模式（图集在各子文件夹内）:
+      图片: {idx}{ext}  实况: live{idx}{ext}  封面: live{idx}_cover{ext}
+    扁平模式（集中存放于博主文件夹下的「图片」目录，文件名带描述保证唯一）:
+      图片: {date}_{desc}_{idx}{ext}  实况: {date}_{desc}_live{idx}{ext}  封面: {date}_{desc}_live{idx}_cover{ext}
     """
     if is_image:
-        base_desc, idx, is_live = _extract_image_parts(desc)
-        folder = compute_download_folder('', mix_name, is_image, base_desc, date_str, include_date)
-        if is_live:
-            filename = f"live{idx}{ext}" if idx else sanitize_filename(desc, 150) + ext
+        base_desc, idx, media_type = _extract_image_parts(desc)
+        folder = compute_download_folder('', mix_name, is_image, base_desc, date_str, include_date, flat_mode)
+        if flat_mode:
+            # 扁平模式：文件名包含描述，避免不同图集同名冲突
+            name_base = compute_base_filename(base_desc, date_str, include_date)
+            if media_type == 'live':
+                filename = f"{name_base}_live{idx}{ext}" if idx else sanitize_filename(desc, 150) + ext
+            elif media_type == 'cover':
+                filename = f"{name_base}_live{idx}_cover{ext}" if idx else sanitize_filename(desc, 150) + ext
+            else:
+                filename = f"{name_base}_{idx}{ext}" if idx else sanitize_filename(desc, 150) + ext
         else:
-            filename = f"{idx}{ext}" if idx else sanitize_filename(desc, 150) + ext
+            if media_type == 'live':
+                filename = f"live{idx}{ext}" if idx else sanitize_filename(desc, 150) + ext
+            elif media_type == 'cover':
+                filename = f"live{idx}_cover{ext}" if idx else sanitize_filename(desc, 150) + ext
+            else:
+                filename = f"{idx}{ext}" if idx else sanitize_filename(desc, 150) + ext
     else:
         base_filename = compute_base_filename(desc, date_str, include_date)
         folder = compute_download_folder('', mix_name, is_image)
         filename = sanitize_filename(base_filename, 150) + ext
     return os.path.join(folder, filename) if folder else filename
+
+
+def compute_flat_mirror_path(task, mirror_base):
+    """计算图集任务在扁平镜像目录中的完整目标路径。
+
+    结构: mirror_base/图片/{date}_{desc}_{idx}{ext}（扁平，不建逐个图集子目录）
+    mirror_base 通常为博主文件夹（作品下载/{博主}/），即扁平图集以博主为父级。
+    与 build_expected_filename(flat_mode=True) 共用逻辑，保证路径一致。
+    """
+    expected = build_expected_filename(
+        task.get('desc', ''), task.get('ext', ''), True,
+        None, task.get('date', ''), task.get('include_date_in_filename', True),
+        flat_mode=True,
+    )
+    return os.path.join(mirror_base, expected)
+
+
+def mirror_file_to_flat(src_path, task, mirror_base):
+    """将已下载的图集文件复制到扁平镜像目录（与原有结构并存）。
+
+    返回 (dst_path, copied)：
+      - copied=True  本次实际复制
+      - copied=False 目标已存在（跳过）或失败（dst_path=None）
+    """
+    dst_path = compute_flat_mirror_path(task, mirror_base)
+    if os.path.exists(dst_path):
+        return dst_path, False
+    dst_folder = os.path.dirname(dst_path)
+    if not safe_mkdir(dst_folder):
+        return None, False
+    try:
+        shutil.copy2(src_path, dst_path)  # copy2 保留修改时间
+        return dst_path, True
+    except Exception as e:
+        print(f"[警告] 镜像复制失败: {src_path} -> {dst_path}: {e}")
+        return None, False

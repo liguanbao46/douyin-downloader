@@ -30,20 +30,6 @@ class IconPreviewButton(QtWidgets.QPushButton):
         self.icon_name = icon_name
         self.setup_icon()
         self.setFixedSize(30, 30)
-        self.setStyleSheet("""
-            QPushButton {
-                border: 2px solid #ddd;
-                background-color: white;
-                border-radius: 0px;
-            }
-            QPushButton:checked {
-                border: 2px solid #409EFF;
-                background-color: #ecf5ff;
-            }
-            QPushButton:hover {
-                border: 2px solid #409EFF;
-            }
-        """)
         self.setCheckable(True)
         
     def setup_icon(self):
@@ -64,90 +50,103 @@ class SettingsWindow(QtWidgets.QDialog):
         self.checkmark_svg_path = checkmark_svg_path
         self.setWindowTitle('设置')
         self.setModal(False)
-        self.resize(500, 550)
+        self.resize(760, 720)
         
         layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(16, 16, 16, 16)
         layout.setSpacing(12)
-        
-        top_btns_layout = QtWidgets.QHBoxLayout()
+
+        # Header
+        header_layout = QtWidgets.QHBoxLayout()
+        header_layout.setSpacing(8)
+        self.back_btn = QtWidgets.QPushButton('←')
+        self.back_btn.setObjectName('icon_btn')
+        header_layout.addWidget(self.back_btn)
+        title_label = QtWidgets.QLabel('设置')
+        title_font = title_label.font()
+        title_font.setPointSize(18)
+        title_font.setBold(True)
+        title_label.setFont(title_font)
+        header_layout.addWidget(title_label)
+        header_layout.addStretch()
         self.view_log_btn = QtWidgets.QPushButton('查看日志')
         self.tutorial_btn = QtWidgets.QPushButton('查看教程')
         self.about_btn = QtWidgets.QPushButton('关于')
-        top_btns_layout.addWidget(self.view_log_btn)
-        top_btns_layout.addStretch()
-        top_btns_layout.addWidget(self.tutorial_btn)
-        top_btns_layout.addWidget(self.about_btn)
-        layout.addLayout(top_btns_layout)
-        layout.addSpacing(6)
-        
+        header_layout.addWidget(self.view_log_btn)
+        header_layout.addWidget(self.tutorial_btn)
+        header_layout.addWidget(self.about_btn)
+        layout.addLayout(header_layout)
+
+        # Scroll area with card
+        scroll = QtWidgets.QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QtWidgets.QFrame.Shape.NoFrame)
+        card = QtWidgets.QFrame()
+        card.setObjectName('settings_card')
+        card_layout = QtWidgets.QVBoxLayout(card)
+        card_layout.setContentsMargins(20, 20, 20, 20)
+        card_layout.setSpacing(20)
+
+        def add_section(title_text):
+            label = QtWidgets.QLabel(title_text)
+            label.setObjectName('section_title')
+            card_layout.addWidget(label)
+
+        # 账户与授权
+        add_section('账户与授权')
+        account_btns = QtWidgets.QHBoxLayout()
+        account_btns.setSpacing(8)
+        self.cookie_auto_btn = QtWidgets.QPushButton('Cookie自动获取')
+        self.browser_config_btn = QtWidgets.QPushButton('配置浏览器')
+        account_btns.addWidget(self.cookie_auto_btn)
+        account_btns.addWidget(self.browser_config_btn)
+        account_btns.addStretch()
+        card_layout.addLayout(account_btns)
+
+        cookie_label = QtWidgets.QLabel('Cookie')
+        card_layout.addWidget(cookie_label)
+        self.settings_cookie = QtWidgets.QTextEdit()
+        self.settings_cookie.setPlainText(cfg.get('cookie', ''))
+        self.settings_cookie.setFixedHeight(120)
+        card_layout.addWidget(self.settings_cookie)
+
+        # 图标选择
         icon_layout = QtWidgets.QHBoxLayout()
+        icon_layout.setSpacing(8)
         icon_label = QtWidgets.QLabel('图标选择:')
         icon_label.setFixedWidth(80)
         icon_layout.addWidget(icon_label)
-        
+
         self.icon_buttons = QtWidgets.QButtonGroup(self)
         self.icon_buttons.setExclusive(True)
-        
+
         self.default_icon_btn = IconPreviewButton(ICON_BYTES_OPTIONS["default"], "default")
         self.icon_buttons.addButton(self.default_icon_btn)
         icon_layout.addWidget(self.default_icon_btn)
-        
+
         self.alt1_icon_btn = IconPreviewButton(ICON_BYTES_OPTIONS["alternative1"], "alternative1")
         self.icon_buttons.addButton(self.alt1_icon_btn)
         icon_layout.addWidget(self.alt1_icon_btn)
-        
+
         # 自定义图标按钮（用于显示和选择自定义图标）
         self.custom_icon_preview_btn = IconPreviewButton(ICON_BYTES_OPTIONS["default"], "custom")
         self.custom_icon_preview_btn.setCheckable(True)
         self.icon_buttons.addButton(self.custom_icon_preview_btn)
         icon_layout.addWidget(self.custom_icon_preview_btn)
-        
+
         self.custom_icon_btn = QtWidgets.QPushButton("自定义")
         self.custom_icon_btn.setFixedHeight(30)
-        self.custom_icon_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #409EFF; 
-                border: 1px solid #409EFF; 
-                color: white;
-                border-radius: 0px; 
-                font-weight: 500; 
-                font-size: 13px;
-                padding: 0 10px;
-            }
-            QPushButton:hover { 
-                background-color: #66b1ff; 
-                border: 1px solid #66b1ff; 
-            }
-            QPushButton:pressed { 
-                background-color: #3a8ee6; 
-                border: 1px solid #3a8ee6; 
-            }
-        """)
-        self.custom_icon_btn.clicked.connect(self.on_custom_icon)
         icon_layout.addWidget(self.custom_icon_btn)
-        
+
         icon_layout.addStretch()
-        layout.addLayout(icon_layout)
-        layout.addSpacing(6)
-        
-        cookie_btn_layout = QtWidgets.QHBoxLayout()
-        self.cookie_auto_btn = QtWidgets.QPushButton('Cookie自动获取')
-        self.browser_config_btn = QtWidgets.QPushButton('配置浏览器')
-        cookie_btn_layout.addWidget(self.cookie_auto_btn)
-        cookie_btn_layout.addWidget(self.browser_config_btn)
-        cookie_btn_layout.addStretch()
-        layout.addLayout(cookie_btn_layout)
-        
-        self.settings_cookie = QtWidgets.QTextEdit()
-        self.settings_cookie.setPlainText(cfg.get('cookie', ''))
-        self.settings_cookie.setFixedHeight(80)
-        layout.addWidget(self.settings_cookie)
-        layout.addSpacing(6)
-        
-        # 保存路径
+        card_layout.addLayout(icon_layout)
+
+        # 存储与性能
+        add_section('存储与性能')
+        path_label = QtWidgets.QLabel('保存路径')
+        card_layout.addWidget(path_label)
         path_layout = QtWidgets.QHBoxLayout()
-        path_layout.setSpacing(3)
-        path_layout.addWidget(QtWidgets.QLabel('保存路径:'))
+        path_layout.setSpacing(8)
         self.settings_path = QtWidgets.QLineEdit()
         path_value = cfg.get('path', '')
         if not path_value:
@@ -158,11 +157,11 @@ class SettingsWindow(QtWidgets.QDialog):
         path_layout.addWidget(self.settings_browse_btn)
         self.settings_open_dir_btn = QtWidgets.QPushButton('打开目录')
         path_layout.addWidget(self.settings_open_dir_btn)
-        layout.addLayout(path_layout)
-        layout.addSpacing(6)
-        
+        card_layout.addLayout(path_layout)
+
         threads_layout = QtWidgets.QHBoxLayout()
-        threads_layout.addWidget(QtWidgets.QLabel('下载线程:'))
+        threads_layout.setSpacing(8)
+        threads_layout.addWidget(QtWidgets.QLabel('下载线程'))
         self.threads_spin = QtWidgets.QSpinBox()
         self.threads_spin.setMinimum(1)
         self.threads_spin.setMaximum(64)
@@ -175,41 +174,49 @@ class SettingsWindow(QtWidgets.QDialog):
         except Exception:
             pass
         threads_layout.addWidget(self.threads_spin)
+        threads_layout.addWidget(QtWidgets.QLabel('线程'))
         threads_layout.addStretch()
-        layout.addLayout(threads_layout)
-        layout.addSpacing(10)
-        
+        card_layout.addLayout(threads_layout)
+
+        # 扁平图集开关
+        self.chk_flat_image = QtWidgets.QCheckBox('启用扁平图集（图片额外集中存放到博主文件夹下的「图片」目录）')
+        self.chk_flat_image.setChecked(bool(cfg.get('flat_image_enabled', False)))
+        card_layout.addWidget(self.chk_flat_image)
+
+        # 下载选项
+        add_section('下载选项')
         self.chk_mix_setting = QtWidgets.QCheckBox('合集统一下载到【合集名称】文件夹')
         self.chk_mix_setting.setChecked(bool(cfg.get('use_mix_folder', True)))
-        layout.addWidget(self.chk_mix_setting)
-        layout.addSpacing(4)
-        
+        card_layout.addWidget(self.chk_mix_setting)
+
         self.chk_date_setting = QtWidgets.QCheckBox('文件名前缀增加作品发布时间')
         self.chk_date_setting.setChecked(bool(cfg.get('include_date_in_filename', True)))
-        layout.addWidget(self.chk_date_setting)
-        layout.addSpacing(4)
-        
+        card_layout.addWidget(self.chk_date_setting)
+
         self.chk_auto_select = QtWidgets.QCheckBox('作品获取完成后自动全选')
         self.chk_auto_select.setChecked(bool(cfg.get('auto_select_after_fetch', True)))
-        layout.addWidget(self.chk_auto_select)
-        layout.addSpacing(4)
-        
+        card_layout.addWidget(self.chk_auto_select)
+
         self.chk_add_title_when_export_urls = QtWidgets.QCheckBox('导出直链时增加标题')
         self.chk_add_title_when_export_urls.setChecked(bool(cfg.get('add_title_when_export_urls', False)))
-        layout.addWidget(self.chk_add_title_when_export_urls)
-        layout.addSpacing(4)
-        
+        card_layout.addWidget(self.chk_add_title_when_export_urls)
+
         self.chk_set_file_time = QtWidgets.QCheckBox('下载完成后修改文件时间为发布时间')
         self.chk_set_file_time.setChecked(bool(cfg.get('set_file_time_to_publish_time', False)))
-        layout.addWidget(self.chk_set_file_time)
-        layout.addSpacing(10)
+        card_layout.addWidget(self.chk_set_file_time)
 
+        self.chk_download_live_cover = QtWidgets.QCheckBox('实况图同时下载封面图')
+        self.chk_download_live_cover.setChecked(bool(cfg.get('download_live_cover', False)))
+        card_layout.addWidget(self.chk_download_live_cover)
+
+        # 监控
+        add_section('监控')
         self.chk_monitor_enabled = QtWidgets.QCheckBox('启用主页监控（仅软件打开时轮询，发现新作自动下载）')
         self.chk_monitor_enabled.setChecked(bool(cfg.get('monitor_enabled', False)))
-        layout.addWidget(self.chk_monitor_enabled)
-        layout.addSpacing(4)
+        card_layout.addWidget(self.chk_monitor_enabled)
 
         monitor_interval_layout = QtWidgets.QHBoxLayout()
+        monitor_interval_layout.setSpacing(8)
         monitor_interval_layout.addWidget(QtWidgets.QLabel('监控检查间隔(分钟):'))
         self.monitor_interval_spin = QtWidgets.QSpinBox()
         self.monitor_interval_spin.setMinimum(MONITOR_INTERVAL_MIN)
@@ -226,17 +233,23 @@ class SettingsWindow(QtWidgets.QDialog):
             pass
         monitor_interval_layout.addWidget(self.monitor_interval_spin)
         monitor_interval_layout.addStretch()
-        layout.addLayout(monitor_interval_layout)
+        card_layout.addLayout(monitor_interval_layout)
 
-        layout.addStretch()
-        
-        button_layout = QtWidgets.QHBoxLayout()
-        self.save_settings_btn = QtWidgets.QPushButton('保存')
+        card_layout.addStretch()
+        scroll.setWidget(card)
+        layout.addWidget(scroll)
+
+        # Footer
+        footer_layout = QtWidgets.QHBoxLayout()
+        footer_layout.addStretch()
         self.cancel_btn = QtWidgets.QPushButton('取消')
-        button_layout.addWidget(self.save_settings_btn)
-        button_layout.addWidget(self.cancel_btn)
-        layout.addLayout(button_layout)
+        self.save_settings_btn = QtWidgets.QPushButton('保存')
+        self.save_settings_btn.setObjectName('save_settings_btn')
+        footer_layout.addWidget(self.cancel_btn)
+        footer_layout.addWidget(self.save_settings_btn)
+        layout.addLayout(footer_layout)
 
+        # Connections
         self.save_settings_btn.clicked.connect(self.save_settings)
         self.cancel_btn.clicked.connect(self.close)
         self.settings_browse_btn.clicked.connect(self.on_browse_path)
@@ -244,9 +257,11 @@ class SettingsWindow(QtWidgets.QDialog):
         self.about_btn.clicked.connect(self.on_view_about)
         self.view_log_btn.clicked.connect(self.on_view_log)
         self.tutorial_btn.clicked.connect(self.on_view_tutorial)
+        self.back_btn.clicked.connect(self.close)
         self.cookie_auto_btn.clicked.connect(self.on_cookie_auto_fetch)
         self.browser_config_btn.clicked.connect(self.on_browser_config)
-        
+        self.custom_icon_btn.clicked.connect(self.on_custom_icon)
+
         self.about_window = AboutWindow(self)
         self.about_window.hide()
         self.tutorial_window = TutorialWindow(self)
@@ -255,59 +270,9 @@ class SettingsWindow(QtWidgets.QDialog):
         self.cookie_fetch_window.hide()
         self.browser_config_window = BrowserConfigWindow(self)
         self.browser_config_window.hide()
-        
-        self.setStyleSheet("""QDialog {
-background-color: #ffffff;
-}
-QLabel { color: #303133; font-size: 13px; }
-QLineEdit {
-border: 1px solid #dcdfe6; background: #ffffff; color: #303133;
-padding: 6px; border-radius: 0px; font-size: 13px;
-}
-QLineEdit:focus { border: 1px solid #409EFF; background: #f9fcff; }
-QTextEdit {
-border: 1px solid #dcdfe6; background: #ffffff; color: #303133;
-padding: 6px; border-radius: 0px; font-size: 13px;
-}
-QTextEdit:focus { border: 1px solid #409EFF; background: #f9fcff; }
-QPushButton {
-border: 1px solid #dcdfe6; background: #409EFF; color: #ffffff;
-padding: 6px 12px; border-radius: 0px; font-size: 13px;
-}
-QPushButton:hover { background: #66b1ff; }
-QPushButton:pressed {
-border: 1px solid #409EFF; background: #409EFF; color: #ffffff;
-}
-QCheckBox { color: #303133; font-size: 13px; spacing: 8px; }
-QCheckBox::indicator {
-width: 16px; height: 16px; border: 1px solid #c0c4cc;
-border-radius: 2px; background: #ffffff;
-}
-QCheckBox::indicator:hover { border: 1px solid #409EFF; }
-QCheckBox::indicator:checked {
-background-color: #409EFF; border: 1px solid #409EFF;
-image: url(""" + self.checkmark_svg_path + r""");
-}
-QSpinBox {
-border: 1px solid #dcdfe6; padding: 6px; background: #ffffff;
-color: #303133; border-radius: 0px; font-size: 13px;
-}
-QSpinBox:focus { border: 1px solid #409EFF; background: #f9fcff; }
-/* 底部 Save/Cancel 按钮样式 */
-QPushButton#save_settings_btn, QPushButton#cancel_btn {
-background-color: #409EFF; border: 1px solid #409EFF; color: white;
-padding: 6px 14px; border-radius: 0px; font-weight: 500; font-size: 13px;
-}
-QPushButton#save_settings_btn:hover, QPushButton#cancel_btn:hover {
-background-color: #66b1ff; border: 1px solid #66b1ff;
-}
-QPushButton#save_settings_btn:pressed, QPushButton#cancel_btn:pressed {
-background-color: #3a8ee6; border: 1px solid #3a8ee6;
-}
-""")
-        self.save_settings_btn.setObjectName("save_settings_btn")
+
         self.cancel_btn.setObjectName("cancel_btn")
-        
+
         self.init_icon_selection()
     
     def init_icon_selection(self):
@@ -431,7 +396,7 @@ background-color: #3a8ee6; border: 1px solid #3a8ee6;
         p = dlg.getExistingDirectory(self, '选择目录', self.settings_path.text() or os.getcwd())
         if p:
             self.settings_path.setText(p)
-    
+
     def on_open_directory(self):
         """打开设置的目录"""
         path = self.settings_path.text().strip()
@@ -464,6 +429,8 @@ background-color: #3a8ee6; border: 1px solid #3a8ee6;
         self.chk_auto_select.setChecked(bool(cfg.get('auto_select_after_fetch', True)))
         self.chk_add_title_when_export_urls.setChecked(bool(cfg.get('add_title_when_export_urls', False)))
         self.chk_set_file_time.setChecked(bool(cfg.get('set_file_time_to_publish_time', False)))
+        self.chk_download_live_cover.setChecked(bool(cfg.get('download_live_cover', False)))
+        self.chk_flat_image.setChecked(bool(cfg.get('flat_image_enabled', False)))
         self.chk_monitor_enabled.setChecked(bool(cfg.get('monitor_enabled', False)))
         try:
             self.monitor_interval_spin.setValue(int(
@@ -496,6 +463,8 @@ background-color: #3a8ee6; border: 1px solid #3a8ee6;
         cfg['auto_select_after_fetch'] = bool(self.chk_auto_select.isChecked())
         cfg['add_title_when_export_urls'] = bool(self.chk_add_title_when_export_urls.isChecked())
         cfg['set_file_time_to_publish_time'] = bool(self.chk_set_file_time.isChecked())
+        cfg['download_live_cover'] = bool(self.chk_download_live_cover.isChecked())
+        cfg['flat_image_enabled'] = bool(self.chk_flat_image.isChecked())
         cfg['monitor_enabled'] = bool(self.chk_monitor_enabled.isChecked())
         cfg['monitor_interval_minutes'] = int(self.monitor_interval_spin.value())
         cfg['threads'] = int(self.threads_spin.value())

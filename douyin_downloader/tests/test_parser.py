@@ -12,7 +12,7 @@ import sys
 # 确保以包方式 import
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 
-from douyin_downloader.core.parser import extract_media_links_from_aweme, parse_all_awemes_to_tasks
+from douyin_downloader.core.parser import extract_media_links_from_aweme, parse_all_awemes_to_tasks, parse_awemes_to_works
 
 
 # ── fixtures ──────────────────────────────────────────────
@@ -70,11 +70,12 @@ EMPTY_AWEME = {
 
 def test_video_extraction():
     """视频：提取最高码率 URL，并返回 create_time"""
-    desc, videos, images, live, date_str, mix_name, create_time = extract_media_links_from_aweme(VIDEO_AWEME)
+    desc, videos, images, live, covers, date_str, mix_name, create_time = extract_media_links_from_aweme(VIDEO_AWEME)
     assert len(videos) == 1, f"expected 1 video, got {len(videos)}"
     assert videos[0] == "https://v.douyin.com/high.mp4", f"wrong url: {videos[0]}"
     assert len(images) == 0
     assert len(live) == 0
+    assert len(covers) == 0
     assert mix_name == "合集A"
     assert date_str == "2023-11-15"  # 1700000000 = 2023-11-15 06:13:20 GMT+8
     assert create_time == 1700000000
@@ -83,22 +84,25 @@ def test_video_extraction():
 
 def test_image_extraction():
     """图集：取 url_list[-1] 作为最高分辨率，并返回 create_time"""
-    desc, videos, images, live, date_str, mix_name, create_time = extract_media_links_from_aweme(IMAGE_AWEME)
+    desc, videos, images, live, covers, date_str, mix_name, create_time = extract_media_links_from_aweme(IMAGE_AWEME)
     assert len(videos) == 0
     assert len(images) == 2, f"expected 2 images, got {len(images)}"
     assert images[0] == "https://i.douyin.com/img1_1080.jpg"
     assert images[1] == "https://i.douyin.com/img2_720.jpg"
     assert len(live) == 0
+    assert len(covers) == 0
     assert mix_name is None
     assert create_time == 1700100000
 
 
 def test_live_image_extraction():
-    """实况图：有 video 字段的 image 项提取实况视频，跳过普通图片；普通图片项正常提取"""
-    desc, videos, images, live, date_str, mix_name, create_time = extract_media_links_from_aweme(LIVE_IMAGE_AWEME)
+    """实况图：有 video 字段的 image 项提取实况视频和封面图，跳过普通图片；普通图片项正常提取"""
+    desc, videos, images, live, covers, date_str, mix_name, create_time = extract_media_links_from_aweme(LIVE_IMAGE_AWEME)
     assert len(videos) == 0
     assert len(live) == 1, f"expected 1 live image, got {len(live)}"
     assert live[0] == "https://v.douyin.com/live_high.mp4"
+    assert len(covers) == 1, f"expected 1 cover, got {len(covers)}"
+    assert covers[0] == "https://i.douyin.com/cover.jpg"
     assert len(images) == 1, f"expected 1 plain image, got {len(images)}"
     assert images[0] == "https://i.douyin.com/plain.jpg"
     assert mix_name == "实况合集"
@@ -107,11 +111,12 @@ def test_live_image_extraction():
 
 def test_empty_aweme():
     """空数据：desc 回退到 aweme_id，时间戳缺失不报错"""
-    desc, videos, images, live, date_str, mix_name, create_time = extract_media_links_from_aweme(EMPTY_AWEME)
+    desc, videos, images, live, covers, date_str, mix_name, create_time = extract_media_links_from_aweme(EMPTY_AWEME)
     assert desc == "7000004"
     assert len(videos) == 0
     assert len(images) == 0
     assert len(live) == 0
+    assert len(covers) == 0
     assert date_str == ''
     assert mix_name is None
     assert create_time == 0
@@ -139,11 +144,23 @@ def test_parse_all_to_tasks():
     assert vtasks[0]['url_hash'] == expected_hash
 
 
+def test_cover_tasks_in_works():
+    """parse_awemes_to_works: 实况图作品包含 cover_tasks，封面 URL 与 live_images 对应"""
+    works = parse_awemes_to_works([LIVE_IMAGE_AWEME])
+    assert len(works) == 1
+    w = works[0]
+    assert len(w['image_tasks']) == 2  # 1 plain + 1 live
+    assert len(w['cover_tasks']) == 1, f"expected 1 cover task, got {len(w['cover_tasks'])}"
+    assert w['cover_tasks'][0]['url'] == "https://i.douyin.com/cover.jpg"
+    assert w['cover_tasks'][0]['desc'] == "实况图作品_livecover1"
+    assert w['cover_tasks'][0]['ext'] == '.jpg'
+
+
 def test_desc_truncation():
     """过长描述自动截断"""
     long_desc = "A" * 500
     aweme = {"aweme_id": "x", "desc": long_desc, "create_time": 1700000000, "video": {}}
-    desc, *_ = extract_media_links_from_aweme(aweme)
+    desc, videos, images, live, covers, *_ = extract_media_links_from_aweme(aweme)
     from douyin_downloader.constants import MAX_DESC_LENGTH
     assert len(desc) == MAX_DESC_LENGTH + len("......"), f"desc length {len(desc)}"
 
@@ -158,6 +175,7 @@ def main():
         test_empty_aweme,
         test_parse_all_to_tasks,
         test_desc_truncation,
+        test_cover_tasks_in_works,
     ]
     passed = 0
     for t in tests:

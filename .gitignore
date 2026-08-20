@@ -19,3 +19,6 @@ build_assets/
 # IDE
 .idea/
 .vscode/
+
+# UI 设计源文件（Ardot 设计稿，非代码）
+douyin-downloader-ui.design/
