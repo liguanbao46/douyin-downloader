@@ -39,18 +39,13 @@ class LogWindow(QtWidgets.QDialog):
         self.close_btn.clicked.connect(self.close)
         
         self.setStyleSheet("""
-            QDialog { background-color: #ffffff; }
+            QDialog { background-color: #FFFFFF; }
             QTextEdit {
-                border: 1px solid #dcdfe6; background: #ffffff; color: #303133;
-                padding: 6px; border-radius: 0px; font-size: 15px;
+                border: 1px solid #E5E5EA; background: #FFFFFF; color: #1D1D1F;
+                padding: 8px; border-radius: 8px; font-size: 12px;
                 font-family: Consolas, 'Courier New', monospace;
+                selection-background-color: #B3D7FF;
             }
-            QPushButton {
-                background-color: #409EFF; border: 1px solid #409EFF; color: white;
-                padding: 6px 14px; border-radius: 0px; font-weight: 500; font-size: 13px;
-            }
-            QPushButton:hover { background-color: #66b1ff; border: 1px solid #66b1ff; }
-            QPushButton:pressed { background-color: #3a8ee6; border: 1px solid #3a8ee6; }
         """)
 
     def append_log(self, text):

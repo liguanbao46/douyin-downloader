@@ -92,8 +92,12 @@ class MainWindow(QtWidgets.QMainWindow):
         top_layout.addWidget(brand_label)
         top_layout.addStretch()
         self.view_log_btn = QtWidgets.QPushButton('查看日志')
-        self.settings_btn_top = QtWidgets.QPushButton('设置')
+        self.settings_btn_top = QtWidgets.QPushButton('⚙')
         self.settings_btn_top.setObjectName('icon_btn')
+        self.settings_btn_top.setToolTip('设置')
+        icon_font = QtGui.QFont('Segoe UI Symbol')
+        icon_font.setPointSize(14)
+        self.settings_btn_top.setFont(icon_font)
         top_layout.addWidget(self.view_log_btn)
         top_layout.addWidget(self.settings_btn_top)
         central_layout.addWidget(self.top_nav)
@@ -112,7 +116,6 @@ class MainWindow(QtWidgets.QMainWindow):
         self.nav_list.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.nav_list.addItem('作品列表')
         self.nav_list.addItem('主页列表')
-        self.nav_list.addItem('下载记录')
         self.nav_list.setCurrentRow(0)
         body.addWidget(self.nav_list)
 
@@ -240,7 +243,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.tree.setColumnWidth(9, 100)  # 发布时间
 
         header = self.tree.header()
-        hdr_h = fm.height() + 10
+        hdr_h = fm.height() + 18
         if header:
             header.setFixedHeight(int(hdr_h))
             header.setSectionResizeMode(0, QtWidgets.QHeaderView.ResizeMode.Fixed)
@@ -315,9 +318,6 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.page_stack.addWidget(works_page)
         self.page_stack.addWidget(self.user_list_window)
-        # 占位页面，防止“下载记录”导航项导致索引越界
-        self._history_placeholder = QtWidgets.QWidget()
-        self.page_stack.addWidget(self._history_placeholder)
         self.nav_list.currentRowChanged.connect(self.on_nav_changed)
 
         self.worker = Worker()

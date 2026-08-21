@@ -42,31 +42,51 @@ def attach_header_checkbox(tree, checkmark_svg_path='', tooltip='全选'):
         QCheckBox::indicator {{
             width: 16px;
             height: 16px;
-            border: 1px solid #c0c4cc;
-            border-radius: 2px;
-            background: #ffffff;
+            border: 1px solid #E5E5EA;
+            border-radius: 4px;
+            background: #FFFFFF;
         }}
-        QCheckBox::indicator:hover {{ border: 1px solid #409EFF; }}
+        QCheckBox::indicator:hover {{ border: 1px solid #007AFF; }}
         QCheckBox::indicator:checked {{
-            background-color: #409EFF;
-            border: 1px solid #409EFF;
+            background-color: #007AFF;
+            border: 1px solid #007AFF;
             image: url({svg});
         }}
         QCheckBox::indicator:indeterminate {{
-            background-color: #a0cfff;
-            border: 1px solid #409EFF;
+            background-color: #9FCBFF;
+            border: 1px solid #007AFF;
         }}
     """)
 
     def reposition():
         if not header:
             return
+        h = header.height()
         x = header.sectionViewportPosition(0)
         w = header.sectionSize(0)
-        h = header.height()
-        side = 18
-        cb.setFixedSize(side, side)
-        cb.move(x + max(0, (w - side) // 2), max(0, (h - side) // 2))
+
+        # 用样式计算行内复选框指示器的真实位置，让表头全选框与行内复选框精确对齐
+        ind_x = x + 2
+        ind_y = max(0, (h - 16) // 2)
+        ind_w = 16
+        try:
+            style = tree.style()
+            opt = QtWidgets.QStyleOptionViewItem()
+            opt.rect = QtCore.QRect(x, 0, w, h)
+            opt.features = QtWidgets.QStyleOptionViewItem.ViewItemFeature.HasCheckIndicator
+            opt.checkState = Qt.CheckState.Unchecked
+            ind = style.subElementRect(
+                QtWidgets.QStyle.SubElement.SE_ItemViewItemCheckIndicator, opt, tree
+            )
+            if ind.isValid() and ind.width() > 0:
+                ind_x = ind.x()
+                ind_y = ind.y()
+                ind_w = ind.width()
+        except Exception:
+            pass
+
+        cb.setFixedSize(ind_w, ind_w)
+        cb.move(ind_x, ind_y)
         cb.raise_()
         cb.show()
 

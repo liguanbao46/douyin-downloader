@@ -134,3 +134,83 @@ def api_request_with_retry(session, url, max_retries=3, base_delay=1, timeout=No
                 time.sleep(min(2 ** attempt * base_delay, 60))
                 continue
             raise
+
+
+def get_self_user_info(session, cookie):
+    """获取当前登录账号的 sec_uid 与 uid（从主页 RENDER_DATA 提取）。
+
+    返回 (sec_uid, uid, error_msg) — 失败时 sec_uid 为 None。
+    """
+    import json as _json
+    from urllib.parse import unquote as _unquote
+
+    try:
+        r = session.get(
+            'https://www.douyin.com/',
+            headers={'Cookie': cookie, 'Referer': 'https://www.douyin.com/'},
+            timeout=REQUEST_TIMEOUT,
+        )
+        m = re.search(r'<script id="RENDER_DATA"[^>]*>([^<]+)</script>', r.text)
+        if not m:
+            return None, None, '未找到 RENDER_DATA，请确认 Cookie 已登录'
+        data = _json.loads(_unquote(m.group(1)))
+        info = ((data.get('app', {}) or {}).get('user', {}) or {}).get('info', {}) or {}
+        sec_uid = info.get('secUid') or info.get('sec_uid')
+        uid = info.get('uid')
+        if not sec_uid:
+            return None, None, '未找到 sec_uid，可能 Cookie 已失效'
+        return sec_uid, str(uid or ''), None
+    except requests.RequestException as e:
+        return None, None, f'请求失败: {e}'
+    except Exception as e:
+        return None, None, f'未知错误: {e}'
+
+
+def build_following_url(sec_user_id, user_id='', offset=0, count=20, source_type=4):
+    """构建关注列表 API 请求参数，返回 (params_dict, base_url)。
+
+    source_type: 1 最近关注(需 max_time) / 3 最早关注(需 min_time) / 4 综合排序
+    分页用 offset 游标（每页 count 条）。
+    """
+    params = {
+        'device_platform': 'webapp', 'aid': '6383', 'channel': 'channel_pc_web',
+        'pc_client_type': '1', 'version_code': '290100', 'version_name': '29.1.0',
+        'cookie_enabled': 'true', 'screen_width': '1920', 'screen_height': '1080',
+        'browser_language': 'zh-CN', 'browser_platform': 'Win32', 'browser_name': 'Edge',
+        'browser_version': '130.0.0.0', 'browser_online': 'true',
+        'engine_name': 'Blink', 'engine_version': '130.0.0.0',
+        'os_name': 'Windows', 'os_version': '10', 'cpu_core_num': '12',
+        'device_memory': '8', 'platform': 'PC', 'downlink': '10', 'effective_type': '4g',
+        'round_trip_time': '100',
+        'user_id': user_id, 'sec_user_id': sec_user_id,
+        'offset': str(offset), 'min_time': '0', 'max_time': '0', 'count': str(count),
+        'source_type': str(source_type), 'gps_access': '0', 'address_book_access': '0',
+        'is_top': '1',
+    }
+    base_url = 'https://www.douyin.com/aweme/v1/web/user/following/list/'
+    return params, base_url
+
+
+def parse_following_response(data):
+    """解析关注列表响应，返回 (users, has_more, offset, total)。
+
+    users 为精简 dict 列表，字段与主页列表存储结构对齐。
+    """
+    followings = data.get('followings') or []
+    users = []
+    for u in followings:
+        if not isinstance(u, dict):
+            continue
+        users.append({
+            'nickname': u.get('nickname') or '',
+            'unique_id': u.get('unique_id') or '',
+            'sec_uid': u.get('sec_uid') or '',
+            'uid': u.get('uid') or '',
+            'signature': u.get('signature') or '',
+            'following_count': u.get('following_count', 0) or 0,
+            'follower_count': u.get('follower_count', 0) or 0,
+            'total_favorited': u.get('total_favorited', 0) or 0,
+            'favoriting_count': u.get('favoriting_count', 0) or 0,
+            'aweme_count': u.get('aweme_count', 0) or 0,
+        })
+    return users, data.get('has_more'), data.get('offset'), data.get('total')

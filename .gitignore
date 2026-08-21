@@ -9,6 +9,13 @@ custom_icon.png
 
 # 运行时数据
 aweme_id_records.json
+run.log
+
+# 本机/本地环境（含绝对路径、下载产物、WorkBuddy 工作目录）
+run.bat
+.workbuddy/
+作品下载/
+作品数据Excel/
 
 # 打包产物
 build/

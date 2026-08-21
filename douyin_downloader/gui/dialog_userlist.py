@@ -71,15 +71,18 @@ class UserListWindow(QtWidgets.QWidget):
         toolbar = QtWidgets.QHBoxLayout()
         self.add_btn = QtWidgets.QPushButton('+ 添加主页')
         self.batch_import_btn = QtWidgets.QPushButton('批量导入')
+        self.import_following_btn = QtWidgets.QPushButton('导入关注')
         self.refresh_stats_btn = QtWidgets.QPushButton('刷新数据')
         self.set_group_btn = QtWidgets.QPushButton('设置分组')
         self.fetch_works_btn = QtWidgets.QPushButton('提取作品')
+        self.fetch_works_btn.setObjectName('primary_btn')
         self.select_all_btn = QtWidgets.QPushButton('全选')
         self.delete_btn = QtWidgets.QPushButton('删除')
         self.export_btn = QtWidgets.QPushButton('导出列表')
 
         toolbar.addWidget(self.add_btn)
         toolbar.addWidget(self.batch_import_btn)
+        toolbar.addWidget(self.import_following_btn)
         toolbar.addWidget(self.refresh_stats_btn)
         toolbar.addWidget(self.set_group_btn)
         toolbar.addWidget(self.fetch_works_btn)
@@ -142,6 +145,7 @@ class UserListWindow(QtWidgets.QWidget):
         # 信号连接
         self.add_btn.clicked.connect(self.on_add_user)
         self.batch_import_btn.clicked.connect(self.on_batch_import)
+        self.import_following_btn.clicked.connect(self.on_import_following)
         self.refresh_stats_btn.clicked.connect(self.on_refresh_stats)
         self.set_group_btn.clicked.connect(self.on_set_group)
         self.fetch_works_btn.clicked.connect(self.on_fetch_checked)
@@ -152,39 +156,32 @@ class UserListWindow(QtWidgets.QWidget):
         self.user_tree.itemDoubleClicked.connect(self.on_double_click_item)
         self.user_tree.itemChanged.connect(self.on_item_changed)
 
+        # 样式主体继承 app.py 全局 Apple 设计体系，这里只做页面级覆盖：
+        # 页面浅灰底（与作品页一致）、主操作按钮、树行高
         self.setStyleSheet("""
-            QWidget { background-color: #ffffff; }
+            UserListWindow {
+                background-color: #F2F2F7;
+            }
             QTreeWidget {
-                background: #ffffff; border: 1px solid #e4e7ed;
-                alternate-background-color: #fafbfc; gridline-color: #f2f6fc;
-                selection-background-color: #d9eaff; font-size: 13px;
+                gridline-color: #F2F2F7;
                 show-decoration-selected: 0;
             }
-            QTreeWidget::item { padding: 2px 4px; color: #222222; outline: 0; height: 28px; }
-            QTreeWidget::item:focus { outline: 0; border: 0; }
-            QTreeWidget::item:hover { background: #f3f8fe; }
-            QTreeWidget::item:selected { background: #cfe4ff; color: #000000; }
-            QTreeWidget::item:selected:active { background: #cfe4ff; outline: 0; }
-            QTreeWidget::item:selected:!active { background: #cfe4ff; outline: 0; }
-            QTreeWidget::indicator {
-                width: 16px; height: 16px; border: 1px solid #c0c4cc;
-                border-radius: 2px; background: #ffffff;
+            QTreeWidget::item {
+                height: 28px;
             }
-            QTreeWidget::indicator:hover { border: 1px solid #409EFF; }
-            QTreeWidget::indicator:checked {
-                background-color: #409EFF; border: 1px solid #409EFF;
-                image: url(""" + self.checkmark_svg_path + r""");
+            QPushButton#primary_btn {
+                background-color: #007AFF;
+                color: #FFFFFF;
+                border-radius: 12px;
             }
-            QPushButton {
-                background-color: #409EFF; border: 1px solid #409EFF; color: white;
-                padding: 5px 14px; border-radius: 0px; font-weight: 500; font-size: 13px;
+            QPushButton#primary_btn:hover { background-color: #0064D6; }
+            QPushButton#primary_btn:pressed { background-color: #004FAD; }
+            QPushButton#primary_btn:disabled { background-color: #9FCBFF; color: #FFFFFF; }
+            QLabel {
+                background-color: transparent;
+                color: #6E6E73;
+                font-size: 12px;
             }
-            QPushButton:hover { background-color: #66b1ff; border: 1px solid #66b1ff; }
-            QPushButton:pressed { background-color: #3a8ee6; border: 1px solid #3a8ee6; }
-            QPushButton:disabled {
-                background-color: #a0cfff; border: 1px solid #a0cfff; color: #f0f0f0;
-            }
-            QLabel { color: #666666; font-size: 12px; }
         """)
 
         self.load_users()
@@ -192,7 +189,8 @@ class UserListWindow(QtWidgets.QWidget):
     def _set_busy(self, busy):
         self._busy = busy
         for btn in (
-            self.add_btn, self.batch_import_btn, self.refresh_stats_btn,
+            self.add_btn, self.batch_import_btn, self.import_following_btn,
+            self.refresh_stats_btn,
             self.set_group_btn, self.fetch_works_btn, self.delete_btn,
             self.export_btn, self.select_all_btn,
         ):
@@ -544,6 +542,14 @@ class UserListWindow(QtWidgets.QWidget):
         threading.Thread(
             target=worker.run, args=(new_secs, cookie), daemon=True
         ).start()
+
+    def on_import_following(self):
+        """打开关注列表导入窗口"""
+        if self._busy:
+            return
+        from .dialog_following import FollowingImportWindow
+        dlg = FollowingImportWindow(self)
+        dlg.exec()
 
     def on_refresh_stats(self):
         """刷新选中行的统计数据"""

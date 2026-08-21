@@ -114,50 +114,38 @@ class BrowserConfigWindow(QtWidgets.QDialog):
         self.test_btn = QtWidgets.QPushButton('测试')
         self.test_btn.clicked.connect(self.on_test)
         self.ok_btn = QtWidgets.QPushButton('确定')
+        self.ok_btn.setObjectName('primary_btn')
         self.cancel_btn = QtWidgets.QPushButton('取消')
-        
+
         button_layout.addWidget(self.test_btn)
         button_layout.addStretch()
         button_layout.addWidget(self.ok_btn)
         button_layout.addWidget(self.cancel_btn)
         layout.addLayout(button_layout)
-        
+
         self.ok_btn.clicked.connect(self.on_ok)
         self.cancel_btn.clicked.connect(self.reject)
-        
+
+        # 基础控件样式继承 app.py 全局 Apple 设计体系，这里只定义主操作按钮
         self.setStyleSheet("""
-        QDialog {
-            background-color: #ffffff;
-        }
-        QLabel { 
-            color: #303133; 
-            font-size: 13px; 
-        }
-        QPushButton {
-            border: 1px solid #dcdfe6; 
-            background: #409EFF; 
-            color: #ffffff;
-            padding: 8px 16px; 
-            border-radius: 0px; 
+        QLabel {
+            color: #1D1D1F;
             font-size: 13px;
         }
-        QPushButton:hover { 
-            background: #66b1ff; 
+        QPushButton#primary_btn {
+            background-color: #007AFF;
+            color: #FFFFFF;
+            border-radius: 12px;
         }
-        QPushButton:pressed {
-            border: 1px solid #409EFF; 
-            background: #409EFF; 
-            color: #ffffff;
+        QPushButton#primary_btn:hover {
+            background-color: #0064D6;
         }
-        QPushButton:disabled {
-            background: #a0cfff; 
-            border: 1px solid #a0cfff; 
-            color: #f0f0f0;
+        QPushButton#primary_btn:pressed {
+            background-color: #004FAD;
         }
-        QLineEdit {
-            padding: 5px;
-            border: 1px solid #dcdfe6;
-            border-radius: 0px;
+        QPushButton#primary_btn:disabled {
+            background-color: #9FCBFF;
+            color: #FFFFFF;
         }
         """)
     

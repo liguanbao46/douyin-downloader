@@ -78,6 +78,7 @@ def run_gui():
             background-color: #FFFFFF;
         }}
         QLabel {{
+            background-color: transparent;
             color: #1D1D1F;
         }}
 
@@ -99,7 +100,7 @@ def run_gui():
             background-color: #FFFFFF;
             color: #1D1D1F;
             border: 1px solid #E5E5EA;
-            border-radius: 9999px;
+            border-radius: 12px;
             padding: 4px 12px;
         }}
         QPushButton#type_filter_btn:hover {{
@@ -109,7 +110,7 @@ def run_gui():
             background-color: transparent;
             color: #1D1D1F;
             border: none;
-            border-radius: 9999px;
+            border-radius: 12px;
             padding: 4px;
         }}
         QPushButton#icon_btn:hover {{
@@ -122,7 +123,7 @@ def run_gui():
             color: #1D1D1F;
             border: none;
             padding: 6px 14px;
-            border-radius: 9999px;
+            border-radius: 12px;
             font-weight: 500;
             font-size: 13px;
             outline: none;
@@ -145,6 +146,7 @@ def run_gui():
         QPushButton#fetch_btn, QPushButton#download_btn, QPushButton#save_settings_btn {{
             background-color: #007AFF;
             color: #FFFFFF;
+            border-radius: 12px;
         }}
         QPushButton#fetch_btn:hover, QPushButton#download_btn:hover, QPushButton#save_settings_btn:hover {{
             background-color: #0064D6;
@@ -181,7 +183,7 @@ def run_gui():
             color: #FFFFFF;
             padding: 6px 14px;
             border: none;
-            border-radius: 9999px;
+            border-radius: 12px;
             font-weight: 500;
             font-size: 13px;
         }}
@@ -229,6 +231,7 @@ def run_gui():
             spacing: 8px;
             font-size: 13px;
             color: #1D1D1F;
+            background-color: transparent;
         }}
         QCheckBox::indicator {{
             width: 18px;
@@ -328,14 +331,14 @@ def run_gui():
             border: none;
             background-color: #F2F2F7;
             height: 8px;
-            border-radius: 9999px;
+            border-radius: 4px;
             text-align: center;
             font-size: 12px;
             color: #6E6E73;
         }}
         QProgressBar::chunk {{
             background-color: #007AFF;
-            border-radius: 9999px;
+            border-radius: 4px;
         }}
 
         /* ---------------- 滚动条 ---------------- */

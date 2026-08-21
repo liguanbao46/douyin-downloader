@@ -67,47 +67,51 @@ class ExtractFilterPanel(QtWidgets.QWidget):
 
         self.setStyleSheet("""
             #ExtractFilterPanel {
-                background: #f7f9fc;
-                border: 1px solid #e4e7ed;
+                background: #F2F2F7;
+                border: 1px solid #E5E5EA;
+                border-radius: 12px;
             }
             #FilterHeader {
-                background: #ffffff;
-                border-bottom: 1px solid #ebeef5;
+                background: #FFFFFF;
+                border-bottom: 1px solid #E5E5EA;
+                border-top-left-radius: 12px;
+                border-top-right-radius: 12px;
             }
             #FilterBodyInner {
-                background: #f7f9fc;
+                background: #F2F2F7;
             }
             #FilterCard {
-                background: #ffffff;
-                border: 1px solid #ebeef5;
+                background: #FFFFFF;
+                border: 1px solid #E5E5EA;
+                border-radius: 8px;
             }
             #FilterSectionTitle {
-                color: #303133;
+                color: #6E6E73;
                 font-size: 12px;
                 font-weight: 600;
                 background: transparent;
                 padding-bottom: 2px;
             }
             #FilterHint {
-                color: #909399;
+                color: #8E8E93;
                 font-size: 11px;
                 background: transparent;
             }
             #FilterSummary {
-                color: #909399;
+                color: #6E6E73;
                 font-size: 12px;
                 background: transparent;
             }
             #FilterSummary[active="true"] {
-                color: #409EFF;
+                color: #007AFF;
             }
             #ExtractFilterPanel QLabel {
-                color: #606266;
+                color: #1D1D1F;
                 font-size: 12px;
                 background: transparent;
             }
             #ExtractFilterPanel QCheckBox {
-                color: #606266;
+                color: #1D1D1F;
                 font-size: 12px;
                 spacing: 6px;
                 background: transparent;
@@ -116,25 +120,26 @@ class ExtractFilterPanel(QtWidgets.QWidget):
             #ExtractFilterPanel QCheckBox::indicator {
                 width: 14px;
                 height: 14px;
-                border: 1px solid #dcdfe6;
-                border-radius: 2px;
-                background: #ffffff;
+                border: 1px solid #E5E5EA;
+                border-radius: 4px;
+                background: #FFFFFF;
             }
-            #ExtractFilterPanel QCheckBox::indicator:hover { border-color: #409EFF; }
+            #ExtractFilterPanel QCheckBox::indicator:hover { border-color: #007AFF; }
             #ExtractFilterPanel QCheckBox::indicator:checked {
-                background: #409EFF;
-                border-color: #409EFF;
+                background: #007AFF;
+                border-color: #007AFF;
             }
-            #ExtractFilterPanel QCheckBox:disabled { color: #c0c4cc; }
+            #ExtractFilterPanel QCheckBox:disabled { color: #AEAEB2; }
             #ExtractFilterPanel QSpinBox,
             #ExtractFilterPanel QDateTimeEdit {
-                background: #ffffff;
-                border: 1px solid #dcdfe6;
+                background: #FFFFFF;
+                border: 1px solid #E5E5EA;
+                border-radius: 6px;
                 padding: 1px 8px;
                 min-height: 26px;
                 max-height: 28px;
                 font-size: 12px;
-                color: #303133;
+                color: #1D1D1F;
             }
             #ExtractFilterPanel QSpinBox {
                 /* 右侧留给上下箭头，防止数字被遮挡 */
@@ -142,12 +147,12 @@ class ExtractFilterPanel(QtWidgets.QWidget):
             }
             #ExtractFilterPanel QSpinBox:focus,
             #ExtractFilterPanel QDateTimeEdit:focus {
-                border: 1px solid #409EFF;
+                border: 1px solid #007AFF;
             }
             #ExtractFilterPanel QSpinBox:disabled,
             #ExtractFilterPanel QDateTimeEdit:disabled {
-                background: #f5f7fa;
-                color: #c0c4cc;
+                background: #F2F2F7;
+                color: #AEAEB2;
             }
             #ExtractFilterPanel QScrollArea {
                 background: transparent;
@@ -155,19 +160,19 @@ class ExtractFilterPanel(QtWidgets.QWidget):
             }
             QPushButton#FilterToggleBtn {
                 background: transparent;
-                border: 1px solid #dcdfe6;
-                color: #606266;
+                border: 1px solid #E5E5EA;
+                color: #1D1D1F;
                 padding: 4px 12px;
                 font-size: 12px;
                 font-weight: 400;
             }
             QPushButton#FilterToggleBtn:hover {
-                border-color: #409EFF;
-                color: #409EFF;
-                background: #ecf5ff;
+                border-color: #007AFF;
+                color: #007AFF;
+                background: #E8F2FF;
             }
             #ExtractFilterPanel QCheckBox#MasterSwitch {
-                color: #303133;
+                color: #1D1D1F;
                 font-size: 13px;
                 font-weight: 600;
                 spacing: 8px;

@@ -128,6 +128,7 @@ class CookieFetchWindow(QtWidgets.QDialog):
         button_layout = QtWidgets.QHBoxLayout()
         self.start_btn = QtWidgets.QPushButton('开始获取')
         self.confirm_btn = QtWidgets.QPushButton('确认')
+        self.confirm_btn.setObjectName('primary_btn')
         self.confirm_btn.setEnabled(False)
 
         button_layout.addWidget(self.start_btn)
@@ -137,34 +138,26 @@ class CookieFetchWindow(QtWidgets.QDialog):
         self.start_btn.clicked.connect(self.on_start_fetch)
         self.confirm_btn.clicked.connect(self.on_confirm)
 
+        # 基础控件样式继承 app.py 全局 Apple 设计体系，这里只定义主操作按钮
         self.setStyleSheet("""
-        QDialog {
-            background-color: #ffffff;
-        }
         QLabel {
-            color: #303133;
+            color: #1D1D1F;
             font-size: 13px;
         }
-        QPushButton {
-            border: 1px solid #dcdfe6;
-            background: #409EFF;
-            color: #ffffff;
-            padding: 8px 16px;
-            border-radius: 0px;
-            font-size: 13px;
+        QPushButton#primary_btn {
+            background-color: #007AFF;
+            color: #FFFFFF;
+            border-radius: 12px;
         }
-        QPushButton:hover {
-            background: #66b1ff;
+        QPushButton#primary_btn:hover {
+            background-color: #0064D6;
         }
-        QPushButton:pressed {
-            border: 1px solid #409EFF;
-            background: #409EFF;
-            color: #ffffff;
+        QPushButton#primary_btn:pressed {
+            background-color: #004FAD;
         }
-        QPushButton:disabled {
-            background: #a0cfff;
-            border: 1px solid #a0cfff;
-            color: #f0f0f0;
+        QPushButton#primary_btn:disabled {
+            background-color: #9FCBFF;
+            color: #FFFFFF;
         }
         """)
 
