@@ -217,7 +217,8 @@ def build_expected_filename(desc, ext, is_image, mix_name=None, date_str='', inc
         folder = compute_download_folder('', mix_name, is_image, base_desc, date_str, include_date, flat_mode)
         if flat_mode:
             # 扁平模式：文件名包含描述，避免不同图集同名冲突
-            name_base = compute_base_filename(base_desc, date_str, include_date)
+            # 描述必须清洗（Windows 非法字符 < > ? : " | 等），否则复制/写盘报 WinError 123
+            name_base = compute_base_filename(sanitize_filename(base_desc, 120), date_str, include_date)
             if media_type == 'live':
                 filename = f"{name_base}_live{idx}{ext}" if idx else sanitize_filename(desc, 150) + ext
             elif media_type == 'cover':

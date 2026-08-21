@@ -38,6 +38,31 @@ class _ProfileBatchWorker(QtCore.QObject):
         self.finished.emit(results)
 
 
+class _MonitorInitBatchWorker(QtCore.QObject):
+    """后台批量初始化监控水位（一键监控用）"""
+    progress = QtCore.pyqtSignal(int, int, str)
+    finished = QtCore.pyqtSignal(object)  # list of (sec, since, seen_ids, error)
+
+    def run(self, sec_ids, cookie):
+        from douyin_downloader.core.monitor import (
+            fetch_user_aweme_page, compute_watermark,
+        )
+        results = []
+        total = len(sec_ids)
+        for i, sec in enumerate(sec_ids):
+            self.progress.emit(i + 1, total, sec)
+            try:
+                awemes, err = fetch_user_aweme_page(sec, cookie)
+                if err:
+                    results.append((sec, 0, [], err))
+                    continue
+                since, seen = compute_watermark(awemes)
+                results.append((sec, int(since or 0), list(seen or []), ''))
+            except Exception as e:
+                results.append((sec, 0, [], str(e)))
+        self.finished.emit(results)
+
+
 class UserListWindow(QtWidgets.QWidget):
     """增强版主页列表页面 — 展示用户完整统计（嵌入主窗口）"""
 
@@ -76,6 +101,7 @@ class UserListWindow(QtWidgets.QWidget):
         self.set_group_btn = QtWidgets.QPushButton('设置分组')
         self.fetch_works_btn = QtWidgets.QPushButton('提取作品')
         self.fetch_works_btn.setObjectName('primary_btn')
+        self.monitor_all_btn = QtWidgets.QPushButton('一键监控')
         self.select_all_btn = QtWidgets.QPushButton('全选')
         self.delete_btn = QtWidgets.QPushButton('删除')
         self.export_btn = QtWidgets.QPushButton('导出列表')
@@ -87,6 +113,7 @@ class UserListWindow(QtWidgets.QWidget):
         toolbar.addWidget(self.set_group_btn)
         toolbar.addWidget(self.fetch_works_btn)
         toolbar.addStretch()
+        toolbar.addWidget(self.monitor_all_btn)
         toolbar.addWidget(self.select_all_btn)
         toolbar.addWidget(self.export_btn)
         toolbar.addWidget(self.delete_btn)
@@ -152,6 +179,7 @@ class UserListWindow(QtWidgets.QWidget):
         self.delete_btn.clicked.connect(self.on_delete)
         self.export_btn.clicked.connect(self.on_export)
         self.select_all_btn.clicked.connect(self.on_select_all)
+        self.monitor_all_btn.clicked.connect(self.on_monitor_all)
         self.user_tree.itemSelectionChanged.connect(self.on_selection_changed)
         self.user_tree.itemDoubleClicked.connect(self.on_double_click_item)
         self.user_tree.itemChanged.connect(self.on_item_changed)
@@ -192,7 +220,7 @@ class UserListWindow(QtWidgets.QWidget):
             self.add_btn, self.batch_import_btn, self.import_following_btn,
             self.refresh_stats_btn,
             self.set_group_btn, self.fetch_works_btn, self.delete_btn,
-            self.export_btn, self.select_all_btn,
+            self.export_btn, self.select_all_btn, self.monitor_all_btn,
         ):
             btn.setEnabled(not busy)
 
@@ -271,6 +299,11 @@ class UserListWindow(QtWidgets.QWidget):
             self.status_label.setText(f'共 {total} 个主页，监控中 {monitored} 人')
         else:
             self.status_label.setText(f'共 {total} 个主页')
+        self.monitor_all_btn.setText('取消全部监控' if (total > 0 and monitored == total) else '一键监控')
+        self.monitor_all_btn.setToolTip(
+            '一键开启所有主页的监控（联网获取各主页最新作品以设定水位，不回溯历史）'
+            if monitored < total else '一键关闭所有主页的监控'
+        )
         self.sync_header_select_all()
         if hasattr(self, '_reposition_header_select_all'):
             self._reposition_header_select_all()
@@ -732,6 +765,121 @@ class UserListWindow(QtWidgets.QWidget):
     def on_header_select_all_clicked(self):
         """表头全选框：有未勾选则全选，否则取消全选"""
         self.on_select_all()
+
+    def on_monitor_all(self):
+        """一键监控：未全监控→批量开启（联网设水位）；全监控→确认后批量关闭"""
+        if self._busy:
+            return
+        users = cfg.get('users', [])
+        if not users:
+            QtWidgets.QMessageBox.information(self, '提示', '主页列表为空，请先添加主页')
+            return
+
+        from douyin_downloader.core.monitor import resolve_user_sec
+
+        unmonitored = [u for u in users if not u.get('monitor')]
+
+        if not unmonitored:
+            # 全部已监控 → 询问是否全部关闭
+            reply = QtWidgets.QMessageBox.question(
+                self, '确认',
+                f'当前 {len(users)} 个主页全部处于监控中。\n是否全部关闭监控？',
+                QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.No,
+            )
+            if reply != QtWidgets.QMessageBox.StandardButton.Yes:
+                return
+            for u in users:
+                u['monitor'] = False
+            cfg['users'] = users
+            save_config(cfg)
+            self.load_users()
+            self.status_label.setText('已关闭全部监控')
+            main_window = self.window()
+            if main_window and hasattr(main_window, 'reload_monitor_timer'):
+                main_window.reload_monitor_timer()
+            if main_window and hasattr(main_window, 'append_log'):
+                main_window.append_log('[监控] 已一键关闭全部监控')
+            return
+
+        # 有未监控的 → 批量开启
+        cookie = cfg.get('cookie', '')
+        if not cookie:
+            QtWidgets.QMessageBox.warning(self, '错误', '请先在设置中配置 Cookie')
+            return
+
+        # 收集可解析 sec 的未监控用户
+        targets = []
+        for u in unmonitored:
+            sec = resolve_user_sec(u)
+            if sec:
+                targets.append((u, sec))
+        skipped = len(unmonitored) - len(targets)
+        if not targets:
+            QtWidgets.QMessageBox.warning(self, '错误', '未能从任何未监控主页解析出用户 ID')
+            return
+
+        reply = QtWidgets.QMessageBox.question(
+            self, '确认',
+            f'为 {len(targets)} 个主页开启监控？\n'
+            f'将逐个联网获取最新作品以设定水位（不回溯下载历史）。'
+            + (f'\n（{skipped} 个主页因无法解析用户 ID 被跳过）' if skipped else ''),
+            QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.No,
+        )
+        if reply != QtWidgets.QMessageBox.StandardButton.Yes:
+            return
+
+        self._set_busy(True)
+        worker = _MonitorInitBatchWorker(self)
+        sec_list = [sec for _u, sec in targets]
+
+        def _on_progress(i, total_n, sec):
+            name = next((u.get('username') or sec for u, s in targets if s == sec), sec)
+            self.status_label.setText(f'正在初始化监控水位 {i}/{total_n}: {name} ...')
+
+        def _done(results):
+            self._set_busy(False)
+            users_now = cfg.get('users', [])
+            ok_n = 0
+            fail_n = 0
+            fail_names = []
+            for sec, since, seen_ids, error in results:
+                if error:
+                    fail_n += 1
+                    fail_names.append(sec)
+                    continue
+                ok_n += 1
+                for u in users_now:
+                    u_sec = resolve_user_sec(u)
+                    if u_sec == sec:
+                        u['monitor'] = True
+                        u['monitor_since'] = int(since or 0)
+                        u['monitor_seen_ids'] = list(seen_ids or [])
+                        u['sec_user_id'] = sec
+                        break
+            cfg['users'] = users_now
+            save_config(cfg)
+            self.load_users()
+            monitored = sum(1 for u in users_now if u.get('monitor'))
+            msg = f'一键监控完成: 新开启 {ok_n} 个，失败 {fail_n} 个（当前监控 {monitored} 人）'
+            self.status_label.setText(msg)
+            main_window = self.window()
+            if main_window and hasattr(main_window, 'reload_monitor_timer'):
+                main_window.reload_monitor_timer()
+            if main_window and hasattr(main_window, 'append_log'):
+                main_window.append_log(f'[监控] {msg}')
+            if fail_n:
+                QtWidgets.QMessageBox.warning(
+                    self, '部分失败',
+                    f'{fail_n} 个主页开启监控失败（Cookie 失效或网络问题），可稍后重试。\n'
+                    + '\n'.join(fail_names[:5])
+                    + ('...' if len(fail_names) > 5 else '')
+                )
+
+        worker.progress.connect(_on_progress)
+        worker.finished.connect(_done)
+        threading.Thread(
+            target=worker.run, args=(sec_list, cookie), daemon=True
+        ).start()
 
     def sync_header_select_all(self):
         """根据行勾选状态同步表头全选框"""
