@@ -1274,16 +1274,21 @@ class MainWindow(QtWidgets.QMainWindow):
         except Exception as e:
             QtWidgets.QMessageBox.warning(self, '错误', f'无法打开用户列表: {e}')
 
-    def on_myworks_extract(self, url, favorite, latest_only):
-        """我的主页提取：填充链接与选项，切换到作品列表并自动开始获取"""
+    def on_myworks_extract(self, url, mode, latest_only):
+        """我的主页提取：填充链接与选项，切换到作品列表并自动开始获取
+        mode: 'post' 作品 / 'favorite' 点赞作品 / 'collect' 收藏作品
+        """
         if self.fetch_btn.text() == '停止获取' or \
                 (hasattr(self, '_thread') and self._thread and self._thread.is_alive()):
             QtWidgets.QMessageBox.warning(self, '提示', '当前有任务进行中，请等待完成或停止后再提取')
             return
-        self.like_checkbox.setChecked(bool(favorite))
+        self.like_checkbox.setChecked(mode == 'favorite')
         self.latest_only_checkbox.setChecked(bool(latest_only))
         self.url_edit.setText(url)
-        self.append_log('[信息] 我的主页提取：开始获取当前登录账号的作品')
+        # collect 模式无对应勾选框，通过强制模式传递给 on_fetch
+        self._force_fetch_mode = 'collect' if mode == 'collect' else None
+        _names = {'post': '作品', 'favorite': '点赞作品', 'collect': '收藏作品'}
+        self.append_log(f'[信息] 我的主页提取：开始获取当前登录账号的{_names.get(mode, "作品")}')
         if self.nav_list.currentRow() != 0:
             self.nav_list.setCurrentRow(0)
         # 延迟触发，确保页面切换完成后再启动获取
@@ -1434,7 +1439,12 @@ class MainWindow(QtWidgets.QMainWindow):
         self._filter_per_user_counts = {}
         self._pending_record_ids = []
         self._pending_record_sec = ''
-        fetch_mode = 'favorite' if self.like_checkbox.isChecked() else 'post'
+        # 「我的主页提取」的收藏模式通过强制模式传入（无对应勾选框）
+        fetch_mode = getattr(self, '_force_fetch_mode', None)
+        if fetch_mode:
+            self._force_fetch_mode = None  # 一次性，用后即清
+        else:
+            fetch_mode = 'favorite' if self.like_checkbox.isChecked() else 'post'
         latest_only = bool(self.latest_only_checkbox.isChecked())
         cfg['fetch_latest_only'] = latest_only
         self._fetch_mode = fetch_mode

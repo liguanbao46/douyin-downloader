@@ -115,6 +115,18 @@ def build_aweme_favorite_url(sec_user_id, max_cursor=0, count=None):
     return params, base_url
 
 
+def build_aweme_collect_url(cursor=0, count=None):
+    """构建收藏作品列表 API 请求参数（aweme/listcollection，基于登录 Cookie 身份），返回 (params_dict, base_url)"""
+    if count is None:
+        count = PAGE_COUNT_PER_REQUEST
+    params = {
+        'device_platform': 'webapp', 'aid': '6383', 'channel': 'channel_pc_web',
+        'cursor': cursor, 'count': count,
+    }
+    base_url = 'https://www.douyin.com/aweme/v1/web/aweme/listcollection/'
+    return params, base_url
+
+
 def api_request_with_retry(session, url, max_retries=3, base_delay=1, timeout=None):
     """带指数退避重试的 API 请求"""
     if timeout is None:

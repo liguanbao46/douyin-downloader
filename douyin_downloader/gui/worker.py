@@ -27,7 +27,8 @@ from douyin_downloader.utils.file_utils import (
 from urllib.parse import quote, urlencode
 from douyin_downloader.core.api import (
     resolve_short_url_and_extract, get_user_profile_info,
-    build_aweme_post_url, build_aweme_favorite_url, api_request_with_retry
+    build_aweme_post_url, build_aweme_favorite_url,
+    build_aweme_collect_url, api_request_with_retry
 )
 from douyin_downloader.core.abogus import ABogus
 from douyin_downloader.core.parser import parse_all_awemes_to_tasks
@@ -142,7 +143,7 @@ class Worker(QtCore.QObject):
         """
         获取用户作品列表（在单独线程中运行）。
         采用分页增量方式，每获取一页就通过 tasks_signal 发回 GUI。
-        fetch_mode: 'post' 获取主页作品, 'favorite' 获取点赞作品
+        fetch_mode: 'post' 获取主页作品, 'favorite' 获取点赞作品, 'collect' 获取收藏作品
         latest_only: True 时只获取第一页最新作品，不翻历史分页
         """
         # 递增代际，使旧 fetch 线程失效
@@ -159,7 +160,8 @@ class Worker(QtCore.QObject):
 
             if not self._is_my_fetch(my_gen):
                 return
-            mode_label = '点赞作品' if fetch_mode == 'favorite' else '主页作品'
+            _mode_labels = {'favorite': '点赞作品', 'collect': '收藏作品', 'post': '主页作品'}
+            mode_label = _mode_labels.get(fetch_mode, '主页作品')
             if latest_only:
                 self.log_signal.emit(f'[信息] 开始获取{mode_label}（仅最新一页）')
             else:
@@ -201,6 +203,8 @@ class Worker(QtCore.QObject):
 
                 if fetch_mode == 'favorite':
                     params, base_url = build_aweme_favorite_url(sec, max_cursor, PAGE_COUNT_PER_REQUEST)
+                elif fetch_mode == 'collect':
+                    params, base_url = build_aweme_collect_url(max_cursor, PAGE_COUNT_PER_REQUEST)
                 else:
                     params, base_url = build_aweme_post_url(sec, max_cursor, PAGE_COUNT_PER_REQUEST, page == 1)
                 a_bogus = quote(self.abogus.get_value(params), safe='')
@@ -221,6 +225,20 @@ class Worker(QtCore.QObject):
                     if not self._is_my_fetch(my_gen):
                         return
                     data = r.json()
+                except requests.HTTPError as e:
+                    status = getattr(getattr(e, 'response', None), 'status_code', None)
+                    if status == 403:
+                        # 抖音 Argus 风控：点赞/收藏等接口要求浏览器级设备签名
+                        if self._is_my_fetch(my_gen):
+                            self.log_signal.emit(
+                                '[错误] 接口被抖音风控拦截（HTTP 403）：'
+                                '该接口当前要求浏览器级设备签名，暂不可用。'
+                                '可尝试更换网络环境或稍后重试；主页作品/关注列表不受影响。'
+                            )
+                        break
+                    if self._is_my_fetch(my_gen):
+                        self.log_signal.emit(f"[警告] 第 {page} 页请求异常: {e}")
+                    break
                 except Exception as e:
                     if self._is_my_fetch(my_gen):
                         self.log_signal.emit(f"[警告] 第 {page} 页请求异常: {e}")
@@ -247,8 +265,21 @@ class Worker(QtCore.QObject):
                     self._total_received += len(aweme_list)
                     self.log_signal.emit(TEXT_INFO_FETCH_PAGE.format(page=page, count=len(aweme_list), total=self._total_received))
 
-                max_cursor = data.get('max_cursor', 0)
+                new_cursor = data.get('max_cursor', 0)
+                if new_cursor in (0, None, ''):
+                    # 收藏接口用 cursor 字段（可能为字符串）
+                    new_cursor = data.get('cursor', 0) or 0
+                try:
+                    new_cursor = int(new_cursor)
+                except (TypeError, ValueError):
+                    new_cursor = 0
                 has_more = data.get('has_more', 0) == 1
+                if fetch_mode == 'collect' and has_more and new_cursor <= max_cursor:
+                    # 游标未推进，避免死循环
+                    if self._is_my_fetch(my_gen):
+                        self.log_signal.emit('[信息] 收藏列表游标未推进，结束翻页')
+                    break
+                max_cursor = new_cursor
                 page += 1
 
                 # 自适应延迟：根据响应时间调整等待
