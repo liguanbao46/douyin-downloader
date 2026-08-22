@@ -6,6 +6,7 @@ GUI - 增强版主页列表（内嵌页面）
 """
 import sys
 import threading
+import time
 try:
     from PyQt6 import QtWidgets, QtCore, QtGui
     from PyQt6.QtCore import Qt
@@ -35,6 +36,8 @@ class _ProfileBatchWorker(QtCore.QObject):
             self.progress.emit(i + 1, total, sec)
             profile, error = UserListWindow.fetch_profile_static(sec, cookie)
             results.append((sec, profile, error))
+            if i < total - 1:
+                time.sleep(0.5)
         self.finished.emit(results)
 
 
@@ -577,12 +580,75 @@ class UserListWindow(QtWidgets.QWidget):
         ).start()
 
     def on_import_following(self):
-        """打开关注列表导入窗口"""
+        """打开关注列表导入窗口，导入后自动刷新新增用户的统计数据"""
         if self._busy:
             return
+
+        # 记录导入前已有的 sec_id 集合
+        users_before = cfg.get('users', [])
+        existing_secs = {extract_sec_user_id_from_url(u.get('url', '')) for u in users_before}
+
         from .dialog_following import FollowingImportWindow
         dlg = FollowingImportWindow(self)
         dlg.exec()
+
+        # 导入后找出新增用户
+        users_after = cfg.get('users', [])
+        new_secs = []
+        for u in users_after:
+            sec = extract_sec_user_id_from_url(u.get('url', ''))
+            if sec and sec not in existing_secs:
+                new_secs.append(sec)
+                existing_secs.add(sec)
+
+        if not new_secs:
+            return
+
+        # 批量刷新新增用户的统计数据（关注列表接口返回的数据可能陈旧或不完整）
+        cookie = cfg.get('cookie', '')
+        if not cookie:
+            self.status_label.setText(
+                f'已导入 {len(new_secs)} 个主页（未配置 Cookie，无法自动刷新数据）'
+            )
+            return
+
+        self._set_busy(True)
+        self.status_label.setText(f'正在刷新新增用户数据 0/{len(new_secs)} ...')
+        worker = _ProfileBatchWorker(self)
+
+        def _on_progress(i, total, sec):
+            name = sec
+            for u in cfg.get('users', []):
+                if extract_sec_user_id_from_url(u.get('url', '')) == sec:
+                    name = u.get('username') or sec
+                    break
+            self.status_label.setText(f'正在刷新 {i}/{total}: {name} ...')
+
+        def _done(results):
+            refreshed = 0
+            users_now = cfg.get('users', [])
+            for sec, profile, error in results:
+                if not profile:
+                    print(f'[警告] 刷新 {sec} 失败: {error}')
+                    continue
+                for u in users_now:
+                    if extract_sec_user_id_from_url(u.get('url', '')) == sec:
+                        self._apply_profile_to_entry(u, profile)
+                        refreshed += 1
+                        break
+            cfg['users'] = users_now
+            save_config(cfg)
+            self.load_users()
+            self._set_busy(False)
+            self.status_label.setText(
+                f'导入完成，已刷新 {refreshed}/{len(new_secs)} 个用户的数据'
+            )
+
+        worker.progress.connect(_on_progress)
+        worker.finished.connect(_done)
+        threading.Thread(
+            target=worker.run, args=(new_secs, cookie), daemon=True
+        ).start()
 
     def on_refresh_stats(self):
         """刷新选中行的统计数据"""
