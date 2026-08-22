@@ -37,6 +37,7 @@ from douyin_downloader.gui.widgets import NoFocusRectStyle, attach_header_checkb
 from douyin_downloader.gui.dialog_log import LogWindow
 from douyin_downloader.gui.dialog_userlist import UserListWindow
 from douyin_downloader.gui.dialog_settings import SettingsWindow
+from douyin_downloader.gui.dialog_myworks import MyWorksWindow
 
 
 def get_app_icon():
@@ -116,6 +117,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.nav_list.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.nav_list.addItem('作品列表')
         self.nav_list.addItem('主页列表')
+        self.nav_list.addItem('我的主页提取')
         self.nav_list.setCurrentRow(0)
         body.addWidget(self.nav_list)
 
@@ -313,11 +315,13 @@ class MainWindow(QtWidgets.QMainWindow):
         self.log_window = LogWindow(self)
         self.log_window.hide()
         self.user_list_window = UserListWindow(None, self.checkmark_svg_path)
+        self.myworks_window = MyWorksWindow(self)
         self.settings_window = SettingsWindow(self, self.checkmark_svg_path)
         self.settings_window.hide()
 
         self.page_stack.addWidget(works_page)
         self.page_stack.addWidget(self.user_list_window)
+        self.page_stack.addWidget(self.myworks_window)
         self.nav_list.currentRowChanged.connect(self.on_nav_changed)
 
         self.worker = Worker()
@@ -355,6 +359,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.worker.export_error_signal.connect(self._on_export_error)
         self.user_save_ready.connect(self._apply_user_save)
         self.monitor_poll_finished.connect(self._on_monitor_poll_finished)
+        self.myworks_window.extract_requested.connect(self.on_myworks_extract)
 
         self.tree.itemSelectionChanged.connect(self.on_tree_selection_changed)
         self.tree.itemChanged.connect(self.on_tree_item_changed)
@@ -1240,6 +1245,11 @@ class MainWindow(QtWidgets.QMainWindow):
                 self.user_list_window.load_users()
             except Exception:
                 pass
+        if row == 2 and self.myworks_window:
+            try:
+                self.myworks_window.refresh_info_if_needed()
+            except Exception:
+                pass
 
     def show_works_page(self):
         """切换到作品列表页（保留树数据）"""
@@ -1263,6 +1273,21 @@ class MainWindow(QtWidgets.QMainWindow):
             self.show_user_list_page()
         except Exception as e:
             QtWidgets.QMessageBox.warning(self, '错误', f'无法打开用户列表: {e}')
+
+    def on_myworks_extract(self, url, favorite, latest_only):
+        """我的主页提取：填充链接与选项，切换到作品列表并自动开始获取"""
+        if self.fetch_btn.text() == '停止获取' or \
+                (hasattr(self, '_thread') and self._thread and self._thread.is_alive()):
+            QtWidgets.QMessageBox.warning(self, '提示', '当前有任务进行中，请等待完成或停止后再提取')
+            return
+        self.like_checkbox.setChecked(bool(favorite))
+        self.latest_only_checkbox.setChecked(bool(latest_only))
+        self.url_edit.setText(url)
+        self.append_log('[信息] 我的主页提取：开始获取当前登录账号的作品')
+        if self.nav_list.currentRow() != 0:
+            self.nav_list.setCurrentRow(0)
+        # 延迟触发，确保页面切换完成后再启动获取
+        QtCore.QTimer.singleShot(100, self.on_fetch)
 
     def start_batch_fetch(self, urls):
         """批量提取多个主页的作品（主页列表勾选的作者），作品累加到列表"""
