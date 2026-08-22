@@ -78,7 +78,8 @@ def download_single_file(task, base_folder, is_image=False, worker=None, session
 
     # 3. 获取 session
     s = session or requests.Session()
-    headers = {}
+    # 抖音 CDN 必须看到 Referer，否则返回 403；这里兜底即使 session 未传也不丢
+    headers = {'Referer': 'https://www.douyin.com/'}
 
     # 4. 检查是否有未完成的下载（断点续传）
     existing_size = 0

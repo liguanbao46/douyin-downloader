@@ -61,7 +61,10 @@ class Worker(QtCore.QObject):
         self._total_received = 0
         self.all_awemes = []
         self.session = requests.Session()
-        self.session.headers.update({'User-Agent': USER_AGENT})
+        self.session.headers.update({
+            'User-Agent': USER_AGENT,
+            'Referer': 'https://www.douyin.com/',
+        })
         retry_strategy = Retry(
             total=3,
             backoff_factor=1,
