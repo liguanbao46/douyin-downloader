@@ -441,7 +441,7 @@ class UserListWindow(QtWidgets.QWidget):
                   'last_publish_time'):
             if k in profile:
                 entry[k] = profile[k]
-        if not entry.get('username') and profile.get('nickname'):
+        if profile.get('nickname'):
             entry['username'] = profile['nickname']
 
     def on_add_user(self):
@@ -701,7 +701,7 @@ class UserListWindow(QtWidgets.QWidget):
                 for u in users_now:
                     if extract_sec_user_id_from_url(u.get('url', '')) == sec:
                         u.update(profile)
-                        if not u.get('username') and profile.get('nickname'):
+                        if profile.get('nickname'):
                             u['username'] = profile['nickname']
                         break
                 refreshed += 1
