@@ -25,7 +25,7 @@ from douyin_downloader.constants import (
 from douyin_downloader.utils.config import save_config
 from douyin_downloader.utils.file_utils import sanitize_filename, safe_mkdir
 from douyin_downloader.core.api import extract_sec_user_id_from_url
-from douyin_downloader.core.parser import parse_awemes_to_works
+from douyin_downloader.core.parser import parse_awemes_to_works, parse_all_awemes_to_tasks
 from douyin_downloader.core.work_filters import (
     normalize_filters, filter_works,
     load_aweme_id_records, save_aweme_id_records,
@@ -38,6 +38,7 @@ from douyin_downloader.gui.dialog_log import LogWindow
 from douyin_downloader.gui.dialog_userlist import UserListWindow
 from douyin_downloader.gui.dialog_settings import SettingsWindow
 from douyin_downloader.gui.dialog_myworks import MyWorksWindow
+from douyin_downloader.gui.browser_extract import BrowserExtractDialog
 
 
 def get_app_icon():
@@ -360,6 +361,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.user_save_ready.connect(self._apply_user_save)
         self.monitor_poll_finished.connect(self._on_monitor_poll_finished)
         self.myworks_window.extract_requested.connect(self.on_myworks_extract)
+        self.myworks_window.browser_extract_requested.connect(self.on_browser_extract)
 
         self.tree.itemSelectionChanged.connect(self.on_tree_selection_changed)
         self.tree.itemChanged.connect(self.on_tree_item_changed)
@@ -1155,7 +1157,9 @@ class MainWindow(QtWidgets.QMainWindow):
             self._current_fetch_awemes = []
         self._current_fetch_awemes.extend(aweme_list or [])
 
-        fetch_mode_label = '点赞' if getattr(self, '_fetch_mode', '') == 'favorite' else '主页'
+        fetch_mode_label = {'favorite': '点赞', 'collect': '收藏'}.get(
+            getattr(self, '_fetch_mode', ''), '主页'
+        )
         items_to_add = []
         idx = self.tree.topLevelItemCount() + 1
 
@@ -1293,6 +1297,90 @@ class MainWindow(QtWidgets.QMainWindow):
             self.nav_list.setCurrentRow(0)
         # 延迟触发，确保页面切换完成后再启动获取
         QtCore.QTimer.singleShot(100, self.on_fetch)
+
+    # ---------- 浏览器登录提取（绕过风控） ----------
+
+    def on_browser_extract(self, mode):
+        """打开浏览器登录提取对话框：登录抖音后由浏览器自身请求捕获作品"""
+        if self.fetch_btn.text() == '停止获取' or \
+                (hasattr(self, '_thread') and self._thread and self._thread.is_alive()):
+            QtWidgets.QMessageBox.warning(self, '提示', '当前有任务进行中，请等待完成或停止后再提取')
+            return
+        if getattr(self, '_browser_extract_dlg', None) and self._browser_extract_dlg.isVisible():
+            self._browser_extract_dlg.raise_()
+            self._browser_extract_dlg.activateWindow()
+            return
+
+        # 与 on_fetch 相同的清空逻辑
+        self.tree.clear()
+        self.vtasks_all = []
+        self.itasks_all = []
+        self.vtasks = []
+        self.itasks = []
+        self.all_awemes = []
+        self.all_works = []
+        self._download_status = {}
+        self.current_nickname = ''
+        self._current_fetch_awemes = []
+        self._filter_per_user_counts = {}
+        self._pending_record_ids = []
+        self._pending_record_sec = ''
+        self.url_edit.clear()
+        self._fetch_mode = mode
+        self._batch_keep_existing = False
+        try:
+            self.progress.setValue(0)
+            self.progress.hide()
+        except Exception:
+            pass
+
+        mode_names = {'post': '作品', 'favorite': '喜欢作品', 'collect': '收藏作品'}
+        self.append_log(f'[信息] 浏览器登录提取：将在浏览器中登录并提取我的{mode_names.get(mode, "作品")}')
+        if self.nav_list.currentRow() != 0:
+            self.nav_list.setCurrentRow(0)
+
+        dlg = BrowserExtractDialog(mode, self)
+        dlg.self_ready.connect(self._on_browser_self_ready)
+        dlg.tasks_ready.connect(self._on_browser_tasks)
+        dlg.done_ready.connect(self._on_browser_done)
+        dlg.cookie_saved.connect(self._on_browser_cookie_saved)
+        self._browser_extract_dlg = dlg
+        dlg.show()
+
+    def _on_browser_self_ready(self, sec, user_info):
+        """浏览器识别到本人账号：填入链接框（供保存用户/去重筛选使用）"""
+        if sec:
+            self.url_edit.setText(f'https://www.douyin.com/user/{sec}')
+        self.append_log(f'[信息] 浏览器提取：识别到账号 {user_info.split("|")[0] if user_info else "我"}')
+
+    def _on_browser_tasks(self, aweme_list, user_info):
+        """浏览器捕获的作品批次：走与接口获取完全相同的展示管线"""
+        if not aweme_list:
+            return
+        try:
+            vtasks, itasks, _, _, _ = parse_all_awemes_to_tasks(aweme_list)
+            self.on_tasks_received(vtasks, itasks, user_info, aweme_list)
+        except Exception as e:
+            self.append_log(f'[警告] 处理浏览器捕获数据失败: {e}')
+
+    def _on_browser_done(self, total):
+        """浏览器提取完成：走统一收尾（自动全选 + 保存用户）"""
+        if total <= 0:
+            self.append_log('[信息] 浏览器提取结束：未捕获到作品')
+            return
+        self.append_log(f'[完成] 浏览器提取结束：共 {total} 个作品')
+        try:
+            self.on_fetch_finished()
+        except Exception as e:
+            self.append_log(f'[警告] 收尾处理失败: {e}')
+
+    def _on_browser_cookie_saved(self, cookie_str):
+        """浏览器登录后回写最新 Cookie，同步到设置页"""
+        try:
+            if self.settings_window and getattr(self.settings_window, 'settings_cookie', None):
+                self.settings_window.settings_cookie.setPlainText(cookie_str)
+        except Exception:
+            pass
 
     def start_batch_fetch(self, urls):
         """批量提取多个主页的作品（主页列表勾选的作者），作品累加到列表"""
@@ -2127,7 +2215,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _start_monitor_download(self, pending_results):
         """将监控发现的新作品展开为下载任务并启动"""
-        from douyin_downloader.core.parser import parse_awemes_to_works
+        from douyin_downloader.core.parser import parse_awemes_to_works, parse_all_awemes_to_tasks
 
         sel_v = []
         sel_i = []

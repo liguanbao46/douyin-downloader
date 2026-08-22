@@ -55,6 +55,7 @@ class _SelfInfoWorker(QtCore.QObject):
 class MyWorksWindow(QtWidgets.QWidget):
     """我的主页提取页面：当前登录账号相关内容一键提取"""
     extract_requested = QtCore.pyqtSignal(str, str, bool)  # url, mode('post'/'favorite'/'collect'), latest_only
+    browser_extract_requested = QtCore.pyqtSignal(str)     # mode：浏览器登录提取（绕过风控）
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -175,6 +176,18 @@ class MyWorksWindow(QtWidgets.QWidget):
         grid.addWidget(self.collect_btn, 1, 1)
         layout.addLayout(grid)
 
+        # 浏览器登录提取（绕过风控）
+        self.browser_btn = QtWidgets.QPushButton('浏览器登录提取（推荐，可绕过风控）')
+        self.browser_btn.setObjectName('fetch_btn')
+        self.browser_btn.setMinimumHeight(38)
+        self.browser_btn.setToolTip(
+            '在软件内打开浏览器并登录抖音，自动滚动捕获作品。\n'
+            '浏览器请求自带风控签名，喜欢/收藏等被 403 拦截的内容也可提取；\n'
+            '登录状态会记住，之后免扫码。'
+        )
+        self.browser_btn.clicked.connect(self.on_browser_extract)
+        layout.addWidget(self.browser_btn)
+
         layout.addStretch()
 
     def _make_action_btn(self, text):
@@ -277,6 +290,12 @@ class MyWorksWindow(QtWidgets.QWidget):
         name = profile.get('nickname') or '我'
         self.info_status.setText(f'正在提取「{name}」的{names.get(mode, "作品")}，请到「作品列表」页查看…')
         self.extract_requested.emit(url, mode, latest_only)
+
+    # ---------- 浏览器登录提取 ----------
+
+    def on_browser_extract(self):
+        """打开浏览器登录提取对话框（在主窗口中处理）"""
+        self.browser_extract_requested.emit('post')
 
     # ---------- 关注主页网址提取 ----------
 
