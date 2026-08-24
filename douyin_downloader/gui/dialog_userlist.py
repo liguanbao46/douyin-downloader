@@ -494,6 +494,13 @@ class UserListWindow(QtWidgets.QWidget):
                 self.status_label.setText(f'已添加并获取资料: {entry.get("username") or sec_user_id}')
             else:
                 self.status_label.setText(f'已添加主页（未获取到资料: {error}）')
+            # 添加新主页 → 自动提取全部历史作品并下载
+            main_window = self.window()
+            if main_window and hasattr(main_window, 'fetch_and_auto_download'):
+                name = entry.get('username') or sec_user_id
+                QtCore.QTimer.singleShot(
+                    100, lambda u=normalized_url, n=name: main_window.fetch_and_auto_download(u, n)
+                )
 
         worker.finished.connect(_done)
         threading.Thread(

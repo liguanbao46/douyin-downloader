@@ -1382,6 +1382,25 @@ class MainWindow(QtWidgets.QMainWindow):
         except Exception:
             pass
 
+    def fetch_and_auto_download(self, url, name=''):
+        """添加新主页后：提取全部作品（含历史）并自动开始下载"""
+        if self._is_worker_busy():
+            self.append_log('[信息] 当前有任务进行中，跳过自动下载历史作品')
+            return
+        cookie = cfg.get('cookie', '')
+        if not cookie:
+            QtWidgets.QMessageBox.warning(self, '提示', '未配置 Cookie，无法自动下载历史作品')
+            return
+        # 切换到作品列表页
+        self.nav_list.setCurrentRow(0)
+        self.like_checkbox.setChecked(False)
+        self.latest_only_checkbox.setChecked(False)
+        self.url_edit.setText(url)
+        self._auto_download_after_fetch = True
+        self.append_log(f'[信息] 开始提取「{name or "新主页"}」的全部作品（含历史），获取完成后自动下载')
+        # 延迟触发，确保页面切换完成后再启动获取
+        QtCore.QTimer.singleShot(100, self.on_fetch)
+
     def start_batch_fetch(self, urls):
         """批量提取多个主页的作品（主页列表勾选的作者），作品累加到列表"""
         if not urls:
@@ -1866,6 +1885,19 @@ class MainWindow(QtWidgets.QMainWindow):
                 self.append_log('[信息] 获取完成')
         except Exception as e:
             self.append_log(f'[警告] 获取完成处理失败: {e}')
+
+        # 添加新主页触发的自动下载：全选后直接开始下载（含历史作品）
+        if getattr(self, '_auto_download_after_fetch', False):
+            self._auto_download_after_fetch = False
+            try:
+                self.on_select_all()
+                if self.tree.topLevelItemCount() > 0:
+                    self.append_log(f'[信息] 历史作品提取完成（{self.tree.topLevelItemCount()} 个），自动开始下载')
+                    self.on_download()
+                else:
+                    self.append_log('[信息] 该主页没有可下载的作品')
+            except Exception as e:
+                self.append_log(f'[警告] 自动下载启动失败: {e}')
 
     def _apply_user_save(self, user_entry, existing_idx, log_msg):
         """主线程应用后台拉取到的用户资料（保留已有分组）"""
