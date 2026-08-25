@@ -780,20 +780,38 @@ class MainWindow(QtWidgets.QMainWindow):
             pass
 
     def author_folder_for_work(self, work, download_folder=None):
-        """根据作品作者信息计算下载目录：作品下载/昵称-unique_id"""
+        """根据作品作者信息计算下载目录：作品下载/昵称-unique_id
+        同一博主（sec_uid）锁定首次使用的目录名：博主改名后新作品仍归入原目录"""
         base_folder = cfg.get('path', '') or os.getcwd()
         if download_folder is None:
             download_folder = os.path.join(base_folder, '作品下载')
         nickname = (work or {}).get('author_nickname') or ''
         unique_id = ''
+        sec_uid = ''
         aweme = (work or {}).get('aweme')
         author = aweme.get('author') if isinstance(aweme, dict) else None
         if isinstance(author, dict):
             unique_id = author.get('unique_id', '') or author.get('short_id', '') or ''
+            sec_uid = author.get('sec_uid', '') or ''
         if not nickname:
             nickname = self.nickname_label.text() or 'Douyin_User'
             unique_id = unique_id or (getattr(self, 'current_unique_id', '') or '')
         folder_name = f"{nickname}-{unique_id}" if unique_id else (nickname or 'Douyin_Downloads')
+        # 目录名锁定：首次下载该博主时记录 sec_uid→目录名，此后改名不影响归档
+        if sec_uid and nickname and nickname != 'Douyin_User':
+            folder_map = cfg.get('author_folder_map')
+            if not isinstance(folder_map, dict):
+                folder_map = {}
+            locked = folder_map.get(sec_uid)
+            if locked:
+                folder_name = locked
+            elif folder_name:
+                folder_map[sec_uid] = folder_name
+                cfg['author_folder_map'] = folder_map
+                try:
+                    save_config(cfg)
+                except Exception:
+                    pass
         if getattr(self, '_fetch_mode', '') == 'favorite':
             folder_name += '-like'
         return os.path.join(download_folder, sanitize_filename(folder_name))
