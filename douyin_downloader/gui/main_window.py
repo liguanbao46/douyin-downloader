@@ -327,6 +327,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.worker = Worker()
         self._thread = None
+        self._download_thread = None
         self._monitor_running = False
         self._monitor_poll_running = False
         self._monitor_pending_updates = []  # [{sec, new_awemes}, ...]
@@ -1300,8 +1301,7 @@ class MainWindow(QtWidgets.QMainWindow):
         """我的主页提取：填充链接与选项，切换到作品列表并自动开始获取
         mode: 'post' 作品 / 'favorite' 点赞作品 / 'collect' 收藏作品
         """
-        if self.fetch_btn.text() == '停止获取' or \
-                (hasattr(self, '_thread') and self._thread and self._thread.is_alive()):
+        if self._is_worker_busy():
             QtWidgets.QMessageBox.warning(self, '提示', '当前有任务进行中，请等待完成或停止后再提取')
             return
         self.like_checkbox.setChecked(mode == 'favorite')
@@ -1320,8 +1320,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def on_browser_extract(self, mode):
         """打开浏览器登录提取对话框：登录抖音后由浏览器自身请求捕获作品"""
-        if self.fetch_btn.text() == '停止获取' or \
-                (hasattr(self, '_thread') and self._thread and self._thread.is_alive()):
+        if self._is_worker_busy():
             QtWidgets.QMessageBox.warning(self, '提示', '当前有任务进行中，请等待完成或停止后再提取')
             return
         if getattr(self, '_browser_extract_dlg', None) and self._browser_extract_dlg.isVisible():
@@ -1458,8 +1457,10 @@ class MainWindow(QtWidgets.QMainWindow):
         queue = getattr(self, '_batch_fetch_queue', None)
         if queue is None:
             return
-        # 提取/下载进行中 → 本轮不推进，等 on_worker_finished 完成后重新调度
-        if self.fetch_btn.text() == '停止获取' or self.download_btn.text() == '停止下载':
+        # 提取/下载线程仍在运行 → 本轮不推进，等 on_worker_finished 完成后重新调度
+        ft = getattr(self, '_thread', None)
+        dt = getattr(self, '_download_thread', None)
+        if (ft is not None and ft.is_alive()) or (dt is not None and dt.is_alive()):
             return
         if getattr(self, '_batch_user_cancelled', False):
             self._batch_fetch_queue = None
@@ -1684,6 +1685,8 @@ class MainWindow(QtWidgets.QMainWindow):
                 if self._thread.is_alive():
                     # 再等待4秒
                     self._thread.join(timeout=4.0)
+            if hasattr(self, '_download_thread') and self._download_thread and self._download_thread.is_alive():
+                self._download_thread.join(timeout=4.0)
                 
             # 关闭所有子窗口
             for w in (self.log_window, self.settings_window):
@@ -1863,12 +1866,13 @@ class MainWindow(QtWidgets.QMainWindow):
         if style:
             style.unpolish(self.download_btn)
             style.polish(self.download_btn)
-        self._thread = threading.Thread(
-            target=self.worker.download_tasks, 
-            args=(sel_v_proc, sel_i_proc, user_folder, threads), 
+        # 下载线程独立于获取线程（_thread），避免批量下载模式下相互覆盖引用
+        self._download_thread = threading.Thread(
+            target=self.worker.download_tasks,
+            args=(sel_v_proc, sel_i_proc, user_folder, threads),
             daemon=True
         )
-        self._thread.start()
+        self._download_thread.start()
 
     def on_fetch_finished(self):
         """获取完成处理（自动全选 + 后台保存用户资料到主页列表）"""
@@ -2152,6 +2156,10 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def on_worker_finished(self):
         """工作线程完成处理（Fetch 或 Download）"""
+        # 下载线程仍在运行（如获取完成钩子刚启动的自动下载）时，
+        # 不重置下载按钮状态，否则队列守卫失效导致提取/下载并发乱序
+        dl_t = getattr(self, '_download_thread', None)
+        dl_running = dl_t is not None and dl_t.is_alive()
         self.url_label_btn.setEnabled(True)
         self.settings_btn.setEnabled(True)
         self.clear_btn.setEnabled(True)
@@ -2159,26 +2167,28 @@ class MainWindow(QtWidgets.QMainWindow):
         if OPENPYXL_AVAILABLE:
             self.export_excel_btn.setEnabled(True)
         self.export_urls_btn.setEnabled(True)
-            
+
         self.invert_btn.setEnabled(True)
         self.download_btn.setEnabled(True)
         self.fetch_btn.setEnabled(True)
         self.fetch_btn.setText('获取作品')
         self.like_checkbox.setEnabled(True)
         self.latest_only_checkbox.setEnabled(True)
-        self.download_btn.setText('开始下载')
-        
+        if not dl_running:
+            self.download_btn.setText('开始下载')
+
         # 设置 "running" 属性为 False，QSS会自动应用蓝色样式
         self.fetch_btn.setProperty("running", False)
         style = self.style()
         if style:
             style.unpolish(self.fetch_btn)
             style.polish(self.fetch_btn)
-        self.download_btn.setProperty("running", False)
-        style = self.style()
-        if style:
-            style.unpolish(self.download_btn)
-            style.polish(self.download_btn)
+        if not dl_running:
+            self.download_btn.setProperty("running", False)
+            style = self.style()
+            if style:
+                style.unpolish(self.download_btn)
+                style.polish(self.download_btn)
 
         # 不再隐藏进度条，保持显示下载完成状态
 
@@ -2208,6 +2218,9 @@ class MainWindow(QtWidgets.QMainWindow):
             return True
         t = getattr(self, '_thread', None)
         if t is not None and t.is_alive():
+            return True
+        dt = getattr(self, '_download_thread', None)
+        if dt is not None and dt.is_alive():
             return True
         if getattr(self, '_batch_fetch_queue', None) is not None:
             return True
@@ -2424,12 +2437,12 @@ class MainWindow(QtWidgets.QMainWindow):
             style.unpolish(self.download_btn)
             style.polish(self.download_btn)
 
-        self._thread = threading.Thread(
+        self._download_thread = threading.Thread(
             target=self.worker.download_tasks,
             args=(sel_v, sel_i, user_folder, threads),
             daemon=True,
         )
-        self._thread.start()
+        self._download_thread.start()
 
     def _apply_monitor_watermarks(self, pending_updates):
         """根据已处理的新作品推进各用户水位线"""
