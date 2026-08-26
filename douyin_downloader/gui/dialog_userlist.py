@@ -103,6 +103,8 @@ class UserListWindow(QtWidgets.QWidget):
         self.refresh_stats_btn = QtWidgets.QPushButton('刷新数据')
         self.set_group_btn = QtWidgets.QPushButton('设置分组')
         self.fetch_works_btn = QtWidgets.QPushButton('提取作品')
+        self.batch_download_btn = QtWidgets.QPushButton('提取并下载')
+        self.batch_download_btn.setObjectName('primary_btn')
         self.fetch_works_btn.setObjectName('primary_btn')
         self.monitor_all_btn = QtWidgets.QPushButton('一键监控')
         self.select_all_btn = QtWidgets.QPushButton('全选')
@@ -115,6 +117,7 @@ class UserListWindow(QtWidgets.QWidget):
         toolbar.addWidget(self.refresh_stats_btn)
         toolbar.addWidget(self.set_group_btn)
         toolbar.addWidget(self.fetch_works_btn)
+        toolbar.addWidget(self.batch_download_btn)
         toolbar.addStretch()
         toolbar.addWidget(self.monitor_all_btn)
         toolbar.addWidget(self.select_all_btn)
@@ -179,6 +182,7 @@ class UserListWindow(QtWidgets.QWidget):
         self.refresh_stats_btn.clicked.connect(self.on_refresh_stats)
         self.set_group_btn.clicked.connect(self.on_set_group)
         self.fetch_works_btn.clicked.connect(self.on_fetch_checked)
+        self.batch_download_btn.clicked.connect(self.on_batch_download_checked)
         self.delete_btn.clicked.connect(self.on_delete)
         self.export_btn.clicked.connect(self.on_export)
         self.select_all_btn.clicked.connect(self.on_select_all)
@@ -222,7 +226,8 @@ class UserListWindow(QtWidgets.QWidget):
         for btn in (
             self.add_btn, self.batch_import_btn, self.import_following_btn,
             self.refresh_stats_btn,
-            self.set_group_btn, self.fetch_works_btn, self.delete_btn,
+            self.set_group_btn, self.fetch_works_btn, self.batch_download_btn,
+            self.delete_btn,
             self.export_btn, self.select_all_btn, self.monitor_all_btn,
         ):
             btn.setEnabled(not busy)
@@ -742,6 +747,25 @@ class UserListWindow(QtWidgets.QWidget):
             return
         self.status_label.setText(f'开始批量提取 {len(urls)} 个主页的作品...')
         main_window.start_batch_fetch(urls)
+
+    def on_batch_download_checked(self):
+        """提取并下载勾选作者的作品：逐个主页 提取→自动下载→清列表，列表不堆积"""
+        urls = []
+        for i in range(self.user_tree.topLevelItemCount()):
+            item = self.user_tree.topLevelItem(i)
+            if item and item.checkState(0) == Qt.CheckState.Checked:
+                user = item.data(0, Qt.ItemDataRole.UserRole)
+                if user and user.get('url'):
+                    urls.append(user['url'])
+        if not urls:
+            QtWidgets.QMessageBox.warning(self, '提示', '请先勾选要提取并下载的作者')
+            return
+
+        main_window = self.window()
+        if not main_window or not hasattr(main_window, 'start_batch_download'):
+            return
+        self.status_label.setText(f'开始批量提取并下载 {len(urls)} 个主页（逐个处理）...')
+        main_window.start_batch_download(urls)
 
     def on_delete(self):
         """删除选中的用户"""

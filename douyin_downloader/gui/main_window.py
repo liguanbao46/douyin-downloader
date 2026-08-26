@@ -1423,10 +1423,10 @@ class MainWindow(QtWidgets.QMainWindow):
         """批量提取多个主页的作品（主页列表勾选的作者），作品累加到列表"""
         if not urls:
             return
-        if self.fetch_btn.text() == '停止获取' or \
-                (hasattr(self, '_thread') and self._thread and self._thread.is_alive()):
+        if self._is_worker_busy():
             QtWidgets.QMessageBox.warning(self, '提示', '当前有任务进行中，请等待完成或停止后再批量提取')
             return
+        self._batch_download_mode = False
         self._batch_fetch_queue = list(urls)
         self._batch_fetch_total = len(urls)
         self._batch_fetch_done = 0
@@ -1434,45 +1434,88 @@ class MainWindow(QtWidgets.QMainWindow):
         self.append_log(f'[信息] 开始批量提取 {len(urls)} 个主页的作品（列表累加展示）')
         self._batch_fetch_next()
 
+    def start_batch_download(self, urls):
+        """批量提取并下载：逐个主页 提取→自动全选→自动下载→清列表，列表不堆积"""
+        if not urls:
+            return
+        if self._is_worker_busy():
+            QtWidgets.QMessageBox.warning(self, '提示', '当前有任务进行中，请等待完成或停止后再开始')
+            return
+        cookie = cfg.get('cookie', '')
+        if not cookie:
+            QtWidgets.QMessageBox.warning(self, '提示', '请先在设置中配置 Cookie')
+            return
+        self._batch_download_mode = True
+        self._batch_fetch_queue = list(urls)
+        self._batch_fetch_total = len(urls)
+        self._batch_fetch_done = 0
+        self._batch_user_cancelled = False
+        self.append_log(f'[信息] 开始批量提取并下载 {len(urls)} 个主页（逐个处理，列表不堆积）')
+        self._batch_fetch_next()
+
     def _batch_fetch_next(self):
-        """批量提取队列：获取下一个用户的作品"""
+        """批量提取队列：获取下一个用户的作品（下载模式下等下载完成再继续）"""
         queue = getattr(self, '_batch_fetch_queue', None)
         if queue is None:
+            return
+        # 提取/下载进行中 → 本轮不推进，等 on_worker_finished 完成后重新调度
+        if self.fetch_btn.text() == '停止获取' or self.download_btn.text() == '停止下载':
             return
         if getattr(self, '_batch_user_cancelled', False):
             self._batch_fetch_queue = None
             self._batch_fetch_total = 0
-            self.append_log('[信息] 批量提取已停止')
+            self._batch_download_mode = False
+            self.append_log('[信息] 批量处理已停止')
             return
         if not queue:
             # 全部完成
             total = getattr(self, '_batch_fetch_total', 0)
             if total:
                 works_count = self.tree.topLevelItemCount()
-                self.append_log(f'[完成] 批量提取完成：{total} 个主页，列表共 {works_count} 个作品')
+                dl_mode = getattr(self, '_batch_download_mode', False)
+                if dl_mode:
+                    self.append_log(f'[完成] 批量提取并下载完成：共处理 {total} 个主页')
+                    if self.user_list_window:
+                        try:
+                            self.user_list_window.status_label.setText(
+                                f'批量提取并下载完成：{total} 个主页'
+                            )
+                        except Exception:
+                            pass
+                else:
+                    self.append_log(f'[完成] 批量提取完成：{total} 个主页，列表共 {works_count} 个作品')
+                    if self.user_list_window:
+                        try:
+                            self.user_list_window.status_label.setText(
+                                f'批量提取完成：{total} 个主页，作品列表共 {works_count} 个'
+                            )
+                        except Exception:
+                            pass
                 self._batch_fetch_total = 0
                 self._batch_fetch_done = 0
                 self._batch_keep_existing = False
                 self._batch_fetch_queue = None
-                if self.user_list_window:
-                    try:
-                        self.user_list_window.status_label.setText(
-                            f'批量提取完成：{total} 个主页，作品列表共 {works_count} 个'
-                        )
-                    except Exception:
-                        pass
-                QtWidgets.QMessageBox.information(
-                    self,
-                    '提取完成',
-                    f'已完成 {total} 个主页的作品提取。\n作品列表共 {works_count} 个作品。',
-                )
+                self._batch_download_mode = False
+                if not dl_mode:
+                    QtWidgets.QMessageBox.information(
+                        self,
+                        '提取完成',
+                        f'已完成 {total} 个主页的作品提取。\n作品列表共 {works_count} 个作品。',
+                    )
             return
         url = queue.pop(0)
         self._batch_fetch_done = getattr(self, '_batch_fetch_done', 0) + 1
-        # 第一个用户前清空列表，后续用户累加
-        self._batch_keep_existing = self._batch_fetch_done > 1
+        dl_mode = getattr(self, '_batch_download_mode', False)
+        if dl_mode:
+            # 下载模式：每个主页独立清列表（列表只显示当前主页），提取完自动下载
+            self._batch_keep_existing = False
+            self._auto_download_after_fetch = True
+            self.append_log(f"[信息] 批量下载进度 {self._batch_fetch_done}/{self._batch_fetch_total}")
+        else:
+            # 提取模式：第一个用户前清空列表，后续用户累加
+            self._batch_keep_existing = self._batch_fetch_done > 1
+            self.append_log(f"[信息] 批量提取进度 {self._batch_fetch_done}/{self._batch_fetch_total}")
         self.url_edit.setText(url)
-        self.append_log(f"[信息] 批量提取进度 {self._batch_fetch_done}/{self._batch_fetch_total}")
         # 上一用户若因筛选结束翻页，标志必须清掉，否则会影响本用户
         try:
             self.worker._fetch_no_more_pages = False
@@ -1664,6 +1707,12 @@ class MainWindow(QtWidgets.QMainWindow):
                 if hasattr(self.worker, '_download_stop_requested'):
                     self.worker._download_stop_requested = True
                 self.append_log('[信息] 已请求停止下载')
+                # 批量下载模式下停止下载 → 同时取消整个批量队列
+                if getattr(self, '_batch_download_mode', False):
+                    self._batch_user_cancelled = True
+                    self._batch_fetch_queue = None
+                    self._batch_download_mode = False
+                    self.append_log('[信息] 已取消批量下载队列')
                 # 立即更新按钮状态
                 self.download_btn.setText('开始下载')
                 
